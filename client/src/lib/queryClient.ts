@@ -1,38 +1,59 @@
+
+import { createClient } from '@supabase/supabase-js';
 import { QueryClient } from '@tanstack/react-query';
 
-// Create the query client instance
+// Create and export the query client instance
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 1000 * 60 * 5, // 5 minutes
+      refetchOnWindowFocus: false,
     },
   },
 });
 
+// Create the Supabase client
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_KEY || '';
+
+export const supabase = createClient(supabaseUrl, supabaseKey);
+
 // API request helper function
-export async function apiRequest(
-  method: string,
-  endpoint: string,
-  body?: any,
-  headers?: HeadersInit
-) {
-  const options: RequestInit = {
+export const apiRequest = async (method: string, endpoint: string, data?: any) => {
+  const response = await fetch(`/api${endpoint}`, {
     method,
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...headers,
     },
-  };
+    body: data ? JSON.stringify(data) : undefined,
+    credentials: 'include',
+  });
 
-  if (body) {
-    options.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(endpoint, options);
   if (!response.ok) {
-      throw new Error(await response.text());
+    const error = await response.json();
+    throw new Error(error.message || 'API request failed');
   }
+
   return response.json();
-}
+};
+
+// Query functions
+export const verifyEmailCode = async (code: string) => {
+  return apiRequest('POST', '/verify/email', { code });
+};
+
+export const verifyPhoneCode = async (code: string) => {
+  return apiRequest('POST', '/verify/phone', { code });
+};
+
+export const login = async (credentials: any) => {
+  return apiRequest('POST', '/auth/login', credentials);
+};
+
+export const signup = async (userData: any) => {
+  return apiRequest('POST', '/auth/signup', userData);
+};
+
+export const getCurrentUser = async () => {
+  return apiRequest('GET', '/auth/me');
+};

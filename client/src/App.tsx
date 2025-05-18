@@ -43,7 +43,6 @@ function Router() {
   );
 }
 
-// Import WebSocket provider
 import { WebSocketProvider } from "@/context/WebSocketContext";
 
 function App() {
