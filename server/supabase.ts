@@ -13,8 +13,13 @@ if (databaseUrl) {
     // Log database connection attempt
     console.log("Connecting to Supabase PostgreSQL database...");
     
-    // Create postgres client
-    const client = postgres(databaseUrl, { prepare: false });
+    // Create postgres client with improved connection settings
+    const client = postgres(databaseUrl, { 
+      prepare: false,
+      connect_timeout: 30,  // Increase connection timeout to 30 seconds
+      idle_timeout: 30,     // Timeout for idle connections
+      max_lifetime: 60 * 30 // Connection max lifetime of 30 minutes
+    });
     
     // Initialize drizzle with the client
     db = drizzle(client, { schema });

@@ -3,73 +3,186 @@
 @tailwind utilities;
 
 :root {
+  /* App custom colors */
+  --primary: #1a365d;    /* Royal Blue (dark) */
+  --primary-light: #2c5282; /* Royal Blue (medium) */
+  --primary-lighter: #3182ce; /* Royal Blue (light) */
+  --primary-lightest: #4299e1; /* Royal Blue (very light) */
+  --primary-gradient: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  --accent: #4299e1;     /* Sky Blue */
+  --accent-light: #63b3ed; /* Sky Blue (light) */
+  --text-on-primary: #ffffff;  /* White text on primary */
+  --success: #48bb78;    /* Green */
+  --warning: #ed8936;    /* Orange */
+  --error: #e53e3e;      /* Red */
+  --background: #f7fafc;  /* Light Gray */
+  --card-bg: #ffffff;     /* White */
+  --border: #e2e8f0;      /* Light Gray */
+}
+
+body {
+  background-color: var(--background);
+  color: #2d3748;
+}
+
+/* Custom button styles with blue theme */
+.btn-primary {
+  background: var(--primary-gradient);
+  color: var(--text-on-primary);
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(26, 54, 93, 0.3);
+}
+
+/* Header and navigation with blue gradients */
+.app-header {
+  background: var(--primary-gradient);
+  color: var(--text-on-primary);
+  padding: 1rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.verification-container {
+  background-color: var(--primary-lighter);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  color: var(--text-on-primary);
+  box-shadow: 0 4px 15px rgba(49, 130, 206, 0.3);
+}
+
+/* Card styling */
+.card {
+  background-color: var(--card-bg);
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Verification page animation */
+.verification-pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(49, 130, 206, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 15px rgba(49, 130, 206, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(49, 130, 206, 0);
+  }
+}
+
+.subscription-card:hover {
+  transform: translateY(-5px);
+  transition: transform 0.3s ease;
+}
+
+/* Eye-scanning animation */
+.eye-scan {
+  position: relative;
+}
+
+.eye-scan::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 5px;
+  background: linear-gradient(90deg, rgba(49, 130, 206, 0), rgba(49, 130, 206, 0.8), rgba(49, 130, 206, 0));
+  animation: eyeScan 2s infinite;
+}
+
+@keyframes eyeScan {
+  0% {
+    top: 0;
+  }
+  75% {
+    top: 100%;
+  }
+  100% {
+    top: 0;
+  }
+}
+
+/* Navigation gradient */
+.nav-gradient {
+  background: var(--primary-gradient);
+}
+
+/* Royal blue focus for inputs */
+input:focus, 
+select:focus, 
+textarea:focus {
+  border-color: var(--primary-lighter);
+  box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.2);
+}
+
+/* Override default shadcn colors with our royal blue theme */
+:root {
   --background: 0 0% 100%;
-  --foreground: 20 14.3% 4.1%;
-  --muted: 60 4.8% 95.9%;
-  --muted-foreground: 25 5.3% 44.7%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 20 14.3% 4.1%;
+  --foreground: 222.2 84% 4.9%;
   --card: 0 0% 100%;
-  --card-foreground: 20 14.3% 4.1%;
-  --border: 20 5.9% 90%;
-  --input: 20 5.9% 90%;
-  --primary: 225 73% 57%;  /* Royal blue primary */
-  --primary-foreground: 0 0% 100%;
-  --secondary: 262 83% 58%; /* Purple secondary */
-  --secondary-foreground: 0 0% 100%;
-  --accent: 196 94% 48%;    /* Bright blue accent */
-  --accent-foreground: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 221 83% 23%;  /* Royal Blue (dark) */
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
   --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 60 9.1% 97.8%;
-  --ring: 20 14.3% 4.1%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 221 83% 53%;
   --radius: 0.5rem;
-  /* Chart colors (not used in this app but keeping for shadcn compatibility) */
-  --chart-1: 225 73% 57%;  /* Royal blue */
-  --chart-2: 262 83% 58%;  /* Purple */
-  --chart-3: 196 94% 48%;  /* Bright blue */
-  --chart-4: 240 5% 64.9%;
-  --chart-5: 240 3.7% 15.9%;
-  /* Sidebar colors (not used in this app but keeping for shadcn compatibility) */
-  --sidebar-background: 0 0% 100%;
-  --sidebar-foreground: 20 14.3% 4.1%;
-  --sidebar-primary: 225 73% 57%;  /* Royal blue */
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 196 94% 48%;  /* Bright blue */
-  --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-border: 20 5.9% 90%;
-  --sidebar-ring: 20 14.3% 4.1%;
 }
 
 .dark {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --popover: 240 10% 3.9%;
-  --popover-foreground: 0 0% 98%;
-  --card: 240 10% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --primary: 343 100% 60%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 252 100% 69%;
-  --secondary-foreground: 0 0% 100%;
-  --accent: 172 71% 53%;
-  --accent-foreground: 0 0% 100%;
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
   --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  --ring: 240 4.9% 83.9%;
-  --radius: 0.5rem;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 224.3 76.3% 48%;
 }
 
 @layer base {
   * {
     @apply border-border;
   }
-
   body {
-    @apply font-sans antialiased bg-[#1a56db]/5 text-foreground;
+    @apply bg-background text-foreground;
   }
 }
 
@@ -79,25 +192,4 @@
 
 .font-inter {
   font-family: 'Inter', sans-serif;
-}
-
-.verification-pulse {
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(60, 207, 175, 0.7);
-  }
-  70% {
-    box-shadow: 0 0 0 15px rgba(60, 207, 175, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(60, 207, 175, 0);
-  }
-}
-
-.subscription-card:hover {
-  transform: translateY(-5px);
-  transition: transform 0.3s ease;
 }
