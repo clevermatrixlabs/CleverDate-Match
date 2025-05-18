@@ -295,7 +295,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get potential matches
       const potentialMatches = await storage.getPotentialMatches(user.id, user.gender);
       
-      res.json(potentialMatches);
+      // Use AI to find optimal matches based on compatibility
+      try {
+        const { findOptimalMatches } = await import('./ai');
+        // Get optimized matches using AI
+        const optimizedMatches = await findOptimalMatches(user, potentialMatches, 10);
+        res.json(optimizedMatches);
+      } catch (aiError) {
+        console.error("Error using AI matching:", aiError);
+        // Fallback to regular matches if AI fails
+        res.json(potentialMatches);
+      }
     } catch (error) {
       console.error("Get potential matches error:", error);
       res.status(500).json({ message: "Failed to get potential matches" });
@@ -469,10 +479,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { checkContentAppropriate } = await import('./ai');
       const contentCheck = await checkContentAppropriate(content);
       
-      if (!contentCheck.isAppropriate) {
+      if (!contentCheck.appropriate) {
         return res.status(400).json({ 
           message: "Message contains inappropriate content", 
-          reasons: contentCheck.reasons 
+          reason: contentCheck.message 
         });
       }
 
