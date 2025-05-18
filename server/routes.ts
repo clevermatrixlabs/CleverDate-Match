@@ -719,13 +719,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Social media routes
   app.get("/api/socials", async (req, res) => {
     try {
-      // Get active social media links
       const socials = await storage.getSocials();
-      
       res.json(socials);
     } catch (error) {
       console.error("Get socials error:", error);
       res.status(500).json({ message: "Failed to get social media links" });
+    }
+  });
+  
+  // Admin route to add social media links (would be protected in a real app)
+  app.post("/api/socials", async (req, res) => {
+    try {
+      const { platform, url } = req.body;
+      
+      if (!platform || !url) {
+        return res.status(400).json({ message: "Platform and URL are required" });
+      }
+      
+      const social = await storage.createSocial({
+        platform,
+        url,
+        isActive: true
+      });
+      
+      res.json(social);
+    } catch (error) {
+      console.error("Create social error:", error);
+      res.status(500).json({ message: "Failed to create social media link" });
     }
   });
 
