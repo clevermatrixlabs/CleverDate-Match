@@ -10,28 +10,28 @@ import zh from './locales/zh.json';
 import ar from './locales/ar.json';
 import hi from './locales/hi.json';
 
-const resources = {
-  en: { translation: en },
-  es: { translation: es },
-  fr: { translation: fr },
-  zh: { translation: zh },
-  ar: { translation: ar },
-  hi: { translation: hi },
-};
-
+// Initialize i18next with all the resources
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    resources,
+    resources: {
+      en: { translation: en },
+      es: { translation: es },
+      fr: { translation: fr },
+      zh: { translation: zh },
+      ar: { translation: ar },
+      hi: { translation: hi }
+    },
     fallbackLng: 'en',
+    debug: false,
     interpolation: {
-      escapeValue: false,
+      escapeValue: false
     },
     detection: {
       order: ['localStorage', 'navigator'],
-      caches: ['localStorage'],
-    },
+      caches: ['localStorage']
+    }
   });
 
 export default i18n;
