@@ -17,13 +17,13 @@ if (databaseUrl) {
     // Create postgres client with improved connection settings
     const client = postgres(databaseUrl, { 
       prepare: false,
-      connect_timeout: 120, // Increased timeout further
-      max_retries: 10,      // Increased retries further
-      retry_interval: 5,    // Slightly longer interval between retries
-      idle_timeout: 180,
+      connect_timeout: 180, // Increased timeout even further
+      max_retries: 15,      // More retries
+      retry_interval: 10,   // Longer interval between retries
+      idle_timeout: 300,
       max_lifetime: 60 * 60,
-      connection_limit: 20,
-      connection_timeout: 120000, // Increased connection timeout
+      connection_limit: 10, // Reduced connection limit to prevent overloading
+      connection_timeout: 180000, // Increased connection timeout
       keepalive: true,
       types: {
         date: {

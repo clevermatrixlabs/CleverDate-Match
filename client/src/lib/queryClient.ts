@@ -1,14 +1,25 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { QueryClient } from '@tanstack/react-query';
 
-// Create and export the query client instance
+// Create a client
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 3,
       refetchOnWindowFocus: false,
+      retry: 3,
       staleTime: 1000 * 60 * 5, // 5 minutes
+      cacheTime: 1000 * 60 * 30, // 30 minutes
+      retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
+      onError: (error) => {
+        console.error('Query error:', error);
+      },
+    },
+    mutations: {
+      retry: 2,
+      retryDelay: 1000,
+      onError: (error) => {
+        console.error('Mutation error:', error);
+      },
     },
   },
 });

@@ -8,7 +8,25 @@ import {
   Social, InsertSocial
 } from "@shared/schema";
 import * as schema from "@shared/schema";
-import { db } from "./supabase";
+import { db } from './supabase';
+import { setTimeout } from 'node:timers/promises';
+
+// Add retry functionality for database operations
+async function withRetry(operation, maxRetries = 5, delay = 1000) {
+  let lastError;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      console.warn(`Operation failed (attempt ${attempt + 1}/${maxRetries}):`, error.message);
+      lastError = error;
+      await setTimeout(delay * Math.pow(2, attempt));
+    }
+  }
+
+  throw lastError;
+}
 import { eq, and, not, desc, or, sql } from "drizzle-orm";
 
 // Interface with all required CRUD methods
@@ -318,64 +336,64 @@ export class DrizzleStorage implements IStorage {
   // User methods
   async getUser(id: number): Promise<User | undefined> {
     if (!db) return undefined;
-    const results = await db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
+    const results = await withRetry(() => db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1));
     return results[0];
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     if (!db) return undefined;
-    const results = await db.select().from(schema.users).where(eq(schema.users.username, username)).limit(1);
+    const results = await withRetry(() => db.select().from(schema.users).where(eq(schema.users.username, username)).limit(1));
     return results[0];
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
     if (!db) throw new Error("Database not available");
     const now = new Date();
-    const results = await db.insert(schema.users).values({
+    const results = await withRetry(() => db.insert(schema.users).values({
       ...insertUser,
       createdAt: now,
       updatedAt: now
-    }).returning();
+    }).returning());
     return results[0];
   }
 
   async updateUser(id: number, userData: Partial<User>): Promise<User> {
     if (!db) throw new Error("Database not available");
-    const results = await db
+    const results = await withRetry(() => db
       .update(schema.users)
       .set({ 
         ...userData,
         updatedAt: new Date() 
       })
       .where(eq(schema.users.id, id))
-      .returning();
+      .returning());
     return results[0];
   }
 
   // Verification methods
   async createVerification(verification: InsertVerification): Promise<Verification> {
     if (!db) throw new Error("Database not available");
-    const results = await db.insert(schema.verifications).values({
+    const results = await withRetry(() => db.insert(schema.verifications).values({
       ...verification,
       createdAt: new Date()
-    }).returning();
+    }).returning());
     return results[0];
   }
 
   async getVerification(id: number): Promise<Verification | undefined> {
     if (!db) return undefined;
-    const results = await db.select().from(schema.verifications).where(eq(schema.verifications.id, id)).limit(1);
+    const results = await withRetry(() => db.select().from(schema.verifications).where(eq(schema.verifications.id, id)).limit(1));
     return results[0];
   }
 
   async getVerificationByUserId(userId: number): Promise<Verification | undefined> {
     if (!db) return undefined;
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(schema.verifications)
       .where(eq(schema.verifications.userId, userId))
       .orderBy(desc(schema.verifications.createdAt))
-      .limit(1);
+      .limit(1));
     return results[0];
   }
 
@@ -383,23 +401,23 @@ export class DrizzleStorage implements IStorage {
   async createMatch(match: InsertMatch): Promise<Match> {
     if (!db) throw new Error("Database not available");
     const now = new Date();
-    const results = await db.insert(schema.matches).values({
+    const results = await withRetry(() => db.insert(schema.matches).values({
       ...match,
       createdAt: now,
       updatedAt: now
-    }).returning();
+    }).returning());
     return results[0];
   }
 
   async getMatch(id: number): Promise<Match | undefined> {
     if (!db) return undefined;
-    const results = await db.select().from(schema.matches).where(eq(schema.matches.id, id)).limit(1);
+    const results = await withRetry(() => db.select().from(schema.matches).where(eq(schema.matches.id, id)).limit(1));
     return results[0];
   }
 
   async getCurrentMatch(userId: number): Promise<Match | undefined> {
     if (!db) return undefined;
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(schema.matches)
       .where(
@@ -412,13 +430,13 @@ export class DrizzleStorage implements IStorage {
         )
       )
       .orderBy(desc(schema.matches.updatedAt))
-      .limit(1);
+      .limit(1));
     return results[0];
   }
 
   async getMatchBetweenUsers(userId1: number, userId2: number): Promise<Match | undefined> {
     if (!db) return undefined;
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(schema.matches)
       .where(
@@ -428,20 +446,20 @@ export class DrizzleStorage implements IStorage {
           eq(schema.matches.status, "pending")
         )
       )
-      .limit(1);
+      .limit(1));
     return results[0];
   }
 
   async updateMatch(id: number, matchData: Partial<Match>): Promise<Match> {
     if (!db) throw new Error("Database not available");
-    const results = await db
+    const results = await withRetry(() => db
       .update(schema.matches)
       .set({ 
         ...matchData,
         updatedAt: new Date() 
       })
       .where(eq(schema.matches.id, id))
-      .returning();
+      .returning());
     return results[0];
   }
 
@@ -456,7 +474,7 @@ export class DrizzleStorage implements IStorage {
     const oppositeGender = user.gender === "male" ? "female" : "male";
 
     // Get all the users this user has interacted with
-    const interactions = await db
+    const interactions = await withRetry(() => db
       .select()
       .from(schema.matches)
       .where(
@@ -467,14 +485,14 @@ export class DrizzleStorage implements IStorage {
             eq(schema.matches.status, "accepted")
           )
         )
-      );
+      ));
 
     const interactedUserIds = interactions.map(match => 
       match.userId === userId ? match.matchedUserId : match.userId
     );
 
     // Now find potential matches
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(schema.users)
       .where(
@@ -484,59 +502,59 @@ export class DrizzleStorage implements IStorage {
           not(sql`${schema.users.id} = ANY(${JSON.stringify(interactedUserIds)})`)
         )
       )
-      .limit(10);
+      .limit(10));
 
     return results;
   }
 
   async getAllActiveMatches(): Promise<Match[]> {
     if (!db) return [];
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(schema.matches)
-      .where(eq(schema.matches.status, "accepted"));
+      .where(eq(schema.matches.status, "accepted")));
     return results;
   }
 
   // Message methods
   async createMessage(message: InsertMessage): Promise<Message> {
     if (!db) throw new Error("Database not available");
-    const results = await db.insert(schema.messages).values({
+    const results = await withRetry(() => db.insert(schema.messages).values({
       ...message,
       timestamp: new Date()
-    }).returning();
+    }).returning());
     return results[0];
   }
 
   async getMessages(matchId: number): Promise<Message[]> {
     if (!db) return [];
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(schema.messages)
       .where(eq(schema.messages.matchId, matchId))
-      .orderBy(schema.messages.timestamp);
+      .orderBy(schema.messages.timestamp));
     return results;
   }
 
   // Subscription methods
   async createSubscription(subscription: InsertSubscription): Promise<Subscription> {
     if (!db) throw new Error("Database not available");
-    const results = await db.insert(schema.subscriptions).values({
+    const results = await withRetry(() => db.insert(schema.subscriptions).values({
       ...subscription,
       createdAt: new Date()
-    }).returning();
+    }).returning());
     return results[0];
   }
 
   async getSubscription(id: number): Promise<Subscription | undefined> {
     if (!db) return undefined;
-    const results = await db.select().from(schema.subscriptions).where(eq(schema.subscriptions.id, id.toString())).limit(1);
+    const results = await withRetry(() => db.select().from(schema.subscriptions).where(eq(schema.subscriptions.id, id.toString())).limit(1));
     return results[0];
   }
 
   async getUserSubscription(userId: number): Promise<Subscription | undefined> {
     if (!db) return undefined;
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(schema.subscriptions)
       .where(
@@ -546,23 +564,23 @@ export class DrizzleStorage implements IStorage {
         )
       )
       .orderBy(desc(schema.subscriptions.createdAt))
-      .limit(1);
+      .limit(1));
     return results[0];
   }
 
   // Transaction methods
   async createTransaction(transaction: InsertTransaction): Promise<Transaction> {
     if (!db) throw new Error("Database not available");
-    const results = await db.insert(schema.transactions).values({
+    const results = await withRetry(() => db.insert(schema.transactions).values({
       ...transaction,
       createdAt: new Date()
-    }).returning();
+    }).returning());
     return results[0];
   }
 
   async getTransactions(userId: number): Promise<Transaction[]> {
     if (!db) return [];
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(schema.transactions)
       .where(eq(schema.transactions.userId, userId))
@@ -573,19 +591,19 @@ export class DrizzleStorage implements IStorage {
   // Social methods
   async createSocial(social: InsertSocial): Promise<Social> {
     if (!db) throw new Error("Database not available");
-    const results = await db.insert(schema.socials).values({
+    const results = await withRetry(() => db.insert(schema.socials).values({
       ...social,
       createdAt: new Date()
-    }).returning();
+    }).returning());
     return results[0];
   }
 
   async getSocials(): Promise<Social[]> {
     if (!db) return [];
-    const results = await db
+    const results = await withRetry(() => db
       .select()
       .from(schema.socials)
-      .where(eq(schema.socials.isActive, true));
+      .where(eq(schema.socials.isActive, true)));
     return results;
   }
 }
