@@ -1,32 +1,31 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "../shared/schema";
+import * as schema from "@shared/schema";
 
-// Check for DATABASE_URL environment variable
-if (!process.env.DATABASE_URL) {
-  console.warn("DATABASE_URL not found in environment variables");
-  console.warn("Please set up your Supabase connection string as explained in the README");
-  console.warn("For now, using in-memory storage");
-}
+// Check if DATABASE_URL is available
+const databaseUrl = process.env.DATABASE_URL;
 
-// Create database connection if DATABASE_URL is available
-const connectionString = process.env.DATABASE_URL;
-let client;
-let db;
+// Initialize database connection if URL is available
+let db: ReturnType<typeof drizzle> | null = null;
 
-if (connectionString) {
+if (databaseUrl) {
   try {
-    // Setup the PostgreSQL client with the connection string
-    client = postgres(connectionString, { max: 10 });
+    // Log database connection attempt
+    console.log("Connecting to Supabase PostgreSQL database...");
     
-    // Initialize Drizzle with the client and schema
+    // Create postgres client
+    const client = postgres(databaseUrl, { prepare: false });
+    
+    // Initialize drizzle with the client
     db = drizzle(client, { schema });
     
-    console.log("Connected to Supabase database");
-  } catch (error) {
-    console.error("Failed to connect to Supabase database:", error);
-    console.warn("Falling back to in-memory storage");
+    console.log("Successfully connected to Supabase PostgreSQL database");
+  } catch (err) {
+    console.error("Failed to connect to Supabase PostgreSQL database:", err);
+    console.log("Using in-memory storage as fallback");
   }
+} else {
+  console.log("DATABASE_URL not found. Using in-memory storage");
 }
 
 export { db };
