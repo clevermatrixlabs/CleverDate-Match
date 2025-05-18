@@ -286,6 +286,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to update user" });
     }
   });
+  
+  // Get AI-powered personality insights for your profile
+  app.get("/api/users/personality-insights", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      
+      // Premium feature check
+      if (user.subscriptionTier === "none") {
+        return res.status(403).json({ 
+          message: "This feature requires a subscription",
+          isPremium: true
+        });
+      }
+      
+      // Generate personality insights using AI
+      try {
+        const { generatePersonalityInsights } = await import('./ai');
+        const insights = await generatePersonalityInsights(user);
+        res.json(insights);
+      } catch (aiError) {
+        console.error("Error generating personality insights:", aiError);
+        res.status(500).json({ message: "Failed to generate personality insights" });
+      }
+    } catch (error) {
+      console.error("Get personality insights error:", error);
+      res.status(500).json({ message: "Failed to get personality insights" });
+    }
+  });
 
   // Match routes
   app.get("/api/matches/potential", requireAuth, async (req, res) => {
