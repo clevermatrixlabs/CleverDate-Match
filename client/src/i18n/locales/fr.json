@@ -1,0 +1,155 @@
+{
+  "app": {
+    "name": "Tim Clever Date",
+    "slogan": "Trouvez votre partenaire idéal, une personne à la fois",
+    "description": "L'application de rencontres qui se concentre sur des connexions de qualité"
+  },
+  "auth": {
+    "login": "Connexion",
+    "register": "Inscription",
+    "logout": "Déconnexion",
+    "username": "Nom d'utilisateur",
+    "password": "Mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "forgotPassword": "Mot de passe oublié ?",
+    "emailPlaceholder": "Entrez votre email",
+    "passwordPlaceholder": "Entrez votre mot de passe",
+    "rememberMe": "Se souvenir de moi",
+    "alreadyHaveAccount": "Vous avez déjà un compte ?",
+    "dontHaveAccount": "Vous n'avez pas de compte ?"
+  },
+  "profile": {
+    "title": "Profil",
+    "edit": "Modifier le profil",
+    "firstName": "Prénom",
+    "lastName": "Nom",
+    "gender": "Genre",
+    "age": "Âge",
+    "location": "Localisation",
+    "aboutMe": "À propos de moi",
+    "religion": "Religion",
+    "interests": "Intérêts",
+    "photos": "Photos",
+    "video": "Vidéo",
+    "save": "Enregistrer les modifications",
+    "cancel": "Annuler",
+    "verification": "Vérification",
+    "verified": "Vérifié",
+    "notVerified": "Non vérifié",
+    "upgrade": "Améliorer",
+    "genderOptions": {
+      "male": "Homme",
+      "female": "Femme"
+    },
+    "religionOptions": {
+      "christianity": "Christianisme",
+      "islam": "Islam",
+      "hinduism": "Hindouisme",
+      "buddhism": "Bouddhisme",
+      "judaism": "Judaïsme",
+      "other": "Autre",
+      "none": "Aucune"
+    }
+  },
+  "matching": {
+    "findMatches": "Trouver des partenaires",
+    "like": "J'aime",
+    "pass": "Passer",
+    "match": "C'est un match !",
+    "noMoreMatches": "Plus de partenaires disponibles",
+    "tryAgainLater": "Réessayez plus tard",
+    "messagePrompt": "Envoyez un message pour commencer une conversation",
+    "personalityInsights": "Analyse de personnalité",
+    "compatibilityScore": "Score de compatibilité",
+    "keyTraits": "Traits principaux"
+  },
+  "messages": {
+    "title": "Messages",
+    "noMessages": "Pas encore de messages",
+    "startConversation": "Commencer une conversation",
+    "typeMessage": "Tapez un message...",
+    "send": "Envoyer",
+    "today": "Aujourd'hui",
+    "yesterday": "Hier"
+  },
+  "subscription": {
+    "title": "Abonnement",
+    "current": "Forfait actuel",
+    "upgrade": "Améliorer l'abonnement",
+    "basic": "Basique",
+    "silver": "Argent",
+    "diamond": "Diamant",
+    "gold": "Or",
+    "benefits": "Avantages",
+    "subscribe": "S'abonner",
+    "manageSubscription": "Gérer l'abonnement",
+    "expiresOn": "Expire le",
+    "monthly": "Mensuel",
+    "yearly": "Annuel",
+    "features": {
+      "messaging": "Messagerie",
+      "matches": "Partenaires illimités",
+      "verification": "Vérification prioritaire",
+      "insights": "Analyse de personnalité",
+      "support": "Support prioritaire",
+      "noAds": "Sans publicité",
+      "gifting": "Cadeaux premium"
+    }
+  },
+  "wallet": {
+    "title": "Portefeuille",
+    "balance": "Solde",
+    "deposit": "Dépôt",
+    "withdraw": "Retrait",
+    "send": "Envoyer un cadeau",
+    "transactions": "Transactions",
+    "amount": "Montant",
+    "recipient": "Destinataire",
+    "date": "Date",
+    "status": "Statut",
+    "type": "Type",
+    "noTransactions": "Pas encore de transactions"
+  },
+  "verification": {
+    "title": "Vérification",
+    "instructions": "Suivez ces étapes pour vérifier votre compte",
+    "takeSelfie": "Prenez un selfie",
+    "recordVideo": "Enregistrez une courte vidéo",
+    "submit": "Soumettre pour vérification",
+    "status": {
+      "pending": "En attente",
+      "approved": "Approuvé",
+      "rejected": "Rejeté"
+    },
+    "rejected": "Votre vérification a été rejetée",
+    "tryAgain": "Veuillez réessayer"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "account": "Compte",
+    "notifications": "Notifications",
+    "privacy": "Confidentialité",
+    "language": "Langue",
+    "theme": "Thème",
+    "help": "Aide et support",
+    "about": "À propos",
+    "logout": "Déconnexion",
+    "deleteAccount": "Supprimer le compte",
+    "themes": {
+      "light": "Clair",
+      "dark": "Sombre",
+      "system": "Système"
+    }
+  },
+  "errors": {
+    "generic": "Une erreur s'est produite",
+    "login": "Nom d'utilisateur ou mot de passe incorrect",
+    "register": "Échec de la création du compte",
+    "network": "Erreur réseau",
+    "unauthorized": "Non autorisé",
+    "subscription": "Abonnement requis",
+    "verification": "Vérification requise",
+    "noMatches": "Aucun partenaire disponible",
+    "retry": "Réessayer"
+  }
+}

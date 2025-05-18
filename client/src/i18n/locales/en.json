@@ -1,0 +1,155 @@
+{
+  "app": {
+    "name": "Tim Clever Date",
+    "slogan": "Find your perfect match, one person at a time",
+    "description": "The dating app that focuses on quality connections"
+  },
+  "auth": {
+    "login": "Login",
+    "register": "Register",
+    "logout": "Logout",
+    "username": "Username",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "forgotPassword": "Forgot Password?",
+    "emailPlaceholder": "Enter your email",
+    "passwordPlaceholder": "Enter your password",
+    "rememberMe": "Remember me",
+    "alreadyHaveAccount": "Already have an account?",
+    "dontHaveAccount": "Don't have an account?"
+  },
+  "profile": {
+    "title": "Profile",
+    "edit": "Edit Profile",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "gender": "Gender",
+    "age": "Age",
+    "location": "Location",
+    "aboutMe": "About Me",
+    "religion": "Religion",
+    "interests": "Interests",
+    "photos": "Photos",
+    "video": "Video",
+    "save": "Save Changes",
+    "cancel": "Cancel",
+    "verification": "Verification",
+    "verified": "Verified",
+    "notVerified": "Not Verified",
+    "upgrade": "Upgrade",
+    "genderOptions": {
+      "male": "Male",
+      "female": "Female"
+    },
+    "religionOptions": {
+      "christianity": "Christianity",
+      "islam": "Islam",
+      "hinduism": "Hinduism",
+      "buddhism": "Buddhism",
+      "judaism": "Judaism",
+      "other": "Other",
+      "none": "None"
+    }
+  },
+  "matching": {
+    "findMatches": "Find Matches",
+    "like": "Like",
+    "pass": "Pass",
+    "match": "It's a Match!",
+    "noMoreMatches": "No more matches available",
+    "tryAgainLater": "Try again later",
+    "messagePrompt": "Send a message to start a conversation",
+    "personalityInsights": "Personality Insights",
+    "compatibilityScore": "Compatibility Score",
+    "keyTraits": "Key Traits"
+  },
+  "messages": {
+    "title": "Messages",
+    "noMessages": "No messages yet",
+    "startConversation": "Start a conversation",
+    "typeMessage": "Type a message...",
+    "send": "Send",
+    "today": "Today",
+    "yesterday": "Yesterday"
+  },
+  "subscription": {
+    "title": "Subscription",
+    "current": "Current Plan",
+    "upgrade": "Upgrade Plan",
+    "basic": "Basic",
+    "silver": "Silver",
+    "diamond": "Diamond",
+    "gold": "Gold",
+    "benefits": "Benefits",
+    "subscribe": "Subscribe",
+    "manageSubscription": "Manage Subscription",
+    "expiresOn": "Expires on",
+    "monthly": "Monthly",
+    "yearly": "Yearly",
+    "features": {
+      "messaging": "Messaging",
+      "matches": "Unlimited Matches",
+      "verification": "Priority Verification",
+      "insights": "Personality Insights",
+      "support": "Priority Support",
+      "noAds": "No Advertisements",
+      "gifting": "Premium Gifts"
+    }
+  },
+  "wallet": {
+    "title": "Wallet",
+    "balance": "Balance",
+    "deposit": "Deposit",
+    "withdraw": "Withdraw",
+    "send": "Send Gift",
+    "transactions": "Transactions",
+    "amount": "Amount",
+    "recipient": "Recipient",
+    "date": "Date",
+    "status": "Status",
+    "type": "Type",
+    "noTransactions": "No transactions yet"
+  },
+  "verification": {
+    "title": "Verification",
+    "instructions": "Follow these steps to verify your account",
+    "takeSelfie": "Take a selfie",
+    "recordVideo": "Record a short video",
+    "submit": "Submit for verification",
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "rejected": "Your verification was rejected",
+    "tryAgain": "Please try again"
+  },
+  "settings": {
+    "title": "Settings",
+    "account": "Account",
+    "notifications": "Notifications",
+    "privacy": "Privacy",
+    "language": "Language",
+    "theme": "Theme",
+    "help": "Help & Support",
+    "about": "About",
+    "logout": "Logout",
+    "deleteAccount": "Delete Account",
+    "themes": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    }
+  },
+  "errors": {
+    "generic": "Something went wrong",
+    "login": "Invalid username or password",
+    "register": "Failed to create account",
+    "network": "Network error",
+    "unauthorized": "Not authorized",
+    "subscription": "Subscription required",
+    "verification": "Verification required",
+    "noMatches": "No matches available",
+    "retry": "Retry"
+  }
+}

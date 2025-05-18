@@ -1,0 +1,155 @@
+{
+  "app": {
+    "name": "تيم كليفر ديت",
+    "slogan": "ابحث عن شريكك المثالي، شخص واحد في كل مرة",
+    "description": "تطبيق المواعدة الذي يركز على العلاقات ذات الجودة"
+  },
+  "auth": {
+    "login": "تسجيل الدخول",
+    "register": "التسجيل",
+    "logout": "تسجيل الخروج",
+    "username": "اسم المستخدم",
+    "password": "كلمة المرور",
+    "confirmPassword": "تأكيد كلمة المرور",
+    "forgotPassword": "نسيت كلمة المرور؟",
+    "emailPlaceholder": "أدخل بريدك الإلكتروني",
+    "passwordPlaceholder": "أدخل كلمة المرور",
+    "rememberMe": "تذكرني",
+    "alreadyHaveAccount": "هل لديك حساب بالفعل؟",
+    "dontHaveAccount": "ليس لديك حساب؟"
+  },
+  "profile": {
+    "title": "الملف الشخصي",
+    "edit": "تعديل الملف الشخصي",
+    "firstName": "الاسم الأول",
+    "lastName": "اسم العائلة",
+    "gender": "الجنس",
+    "age": "العمر",
+    "location": "الموقع",
+    "aboutMe": "عني",
+    "religion": "الديانة",
+    "interests": "الاهتمامات",
+    "photos": "الصور",
+    "video": "الفيديو",
+    "save": "حفظ التغييرات",
+    "cancel": "إلغاء",
+    "verification": "التحقق",
+    "verified": "تم التحقق",
+    "notVerified": "لم يتم التحقق",
+    "upgrade": "ترقية",
+    "genderOptions": {
+      "male": "ذكر",
+      "female": "أنثى"
+    },
+    "religionOptions": {
+      "christianity": "المسيحية",
+      "islam": "الإسلام",
+      "hinduism": "الهندوسية",
+      "buddhism": "البوذية",
+      "judaism": "اليهودية",
+      "other": "أخرى",
+      "none": "لا يوجد"
+    }
+  },
+  "matching": {
+    "findMatches": "البحث عن شركاء",
+    "like": "إعجاب",
+    "pass": "تخطي",
+    "match": "لديك تطابق!",
+    "noMoreMatches": "لا توجد تطابقات متاحة",
+    "tryAgainLater": "حاول مرة أخرى لاحقًا",
+    "messagePrompt": "أرسل رسالة لبدء المحادثة",
+    "personalityInsights": "تحليل الشخصية",
+    "compatibilityScore": "نسبة التوافق",
+    "keyTraits": "السمات الرئيسية"
+  },
+  "messages": {
+    "title": "الرسائل",
+    "noMessages": "لا توجد رسائل بعد",
+    "startConversation": "ابدأ محادثة",
+    "typeMessage": "اكتب رسالة...",
+    "send": "إرسال",
+    "today": "اليوم",
+    "yesterday": "أمس"
+  },
+  "subscription": {
+    "title": "الاشتراك",
+    "current": "الخطة الحالية",
+    "upgrade": "ترقية الخطة",
+    "basic": "أساسي",
+    "silver": "فضي",
+    "diamond": "ماسي",
+    "gold": "ذهبي",
+    "benefits": "المزايا",
+    "subscribe": "اشترك",
+    "manageSubscription": "إدارة الاشتراك",
+    "expiresOn": "ينتهي في",
+    "monthly": "شهري",
+    "yearly": "سنوي",
+    "features": {
+      "messaging": "المراسلة",
+      "matches": "تطابقات غير محدودة",
+      "verification": "تحقق ذو أولوية",
+      "insights": "تحليل الشخصية",
+      "support": "دعم ذو أولوية",
+      "noAds": "بدون إعلانات",
+      "gifting": "هدايا مميزة"
+    }
+  },
+  "wallet": {
+    "title": "المحفظة",
+    "balance": "الرصيد",
+    "deposit": "إيداع",
+    "withdraw": "سحب",
+    "send": "إرسال هدية",
+    "transactions": "المعاملات",
+    "amount": "المبلغ",
+    "recipient": "المستلم",
+    "date": "التاريخ",
+    "status": "الحالة",
+    "type": "النوع",
+    "noTransactions": "لا توجد معاملات بعد"
+  },
+  "verification": {
+    "title": "التحقق",
+    "instructions": "اتبع هذه الخطوات للتحقق من حسابك",
+    "takeSelfie": "التقط صورة شخصية",
+    "recordVideo": "سجل فيديو قصير",
+    "submit": "إرسال للتحقق",
+    "status": {
+      "pending": "قيد الانتظار",
+      "approved": "تمت الموافقة",
+      "rejected": "مرفوض"
+    },
+    "rejected": "تم رفض التحقق الخاص بك",
+    "tryAgain": "يرجى المحاولة مرة أخرى"
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "account": "الحساب",
+    "notifications": "الإشعارات",
+    "privacy": "الخصوصية",
+    "language": "اللغة",
+    "theme": "المظهر",
+    "help": "المساعدة والدعم",
+    "about": "حول",
+    "logout": "تسجيل الخروج",
+    "deleteAccount": "حذف الحساب",
+    "themes": {
+      "light": "فاتح",
+      "dark": "داكن",
+      "system": "النظام"
+    }
+  },
+  "errors": {
+    "generic": "حدث خطأ ما",
+    "login": "اسم المستخدم أو كلمة المرور غير صحيحة",
+    "register": "فشل إنشاء الحساب",
+    "network": "خطأ في الشبكة",
+    "unauthorized": "غير مصرح",
+    "subscription": "يتطلب اشتراك",
+    "verification": "يتطلب التحقق",
+    "noMatches": "لا توجد تطابقات متاحة",
+    "retry": "إعادة المحاولة"
+  }
+}

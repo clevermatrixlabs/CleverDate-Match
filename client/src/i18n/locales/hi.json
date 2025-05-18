@@ -1,0 +1,155 @@
+{
+  "app": {
+    "name": "टिम क्लेवर डेट",
+    "slogan": "एक बार में एक व्यक्ति, अपना सही साथी खोजें",
+    "description": "डेटिंग ऐप जो गुणवत्तापूर्ण संबंधों पर ध्यान केंद्रित करता है"
+  },
+  "auth": {
+    "login": "लॉगिन",
+    "register": "रजिस्टर",
+    "logout": "लॉगआउट",
+    "username": "यूजरनेम",
+    "password": "पासवर्ड",
+    "confirmPassword": "पासवर्ड की पुष्टि करें",
+    "forgotPassword": "पासवर्ड भूल गए?",
+    "emailPlaceholder": "अपना ईमेल दर्ज करें",
+    "passwordPlaceholder": "अपना पासवर्ड दर्ज करें",
+    "rememberMe": "मुझे याद रखें",
+    "alreadyHaveAccount": "पहले से ही खाता है?",
+    "dontHaveAccount": "खाता नहीं है?"
+  },
+  "profile": {
+    "title": "प्रोफ़ाइल",
+    "edit": "प्रोफ़ाइल संपादित करें",
+    "firstName": "पहला नाम",
+    "lastName": "अंतिम नाम",
+    "gender": "लिंग",
+    "age": "उम्र",
+    "location": "स्थान",
+    "aboutMe": "मेरे बारे में",
+    "religion": "धर्म",
+    "interests": "रुचियाँ",
+    "photos": "फोटो",
+    "video": "वीडियो",
+    "save": "परिवर्तन सहेजें",
+    "cancel": "रद्द करें",
+    "verification": "सत्यापन",
+    "verified": "सत्यापित",
+    "notVerified": "असत्यापित",
+    "upgrade": "अपग्रेड",
+    "genderOptions": {
+      "male": "पुरुष",
+      "female": "महिला"
+    },
+    "religionOptions": {
+      "christianity": "ईसाई धर्म",
+      "islam": "इस्लाम",
+      "hinduism": "हिंदू धर्म",
+      "buddhism": "बौद्ध धर्म",
+      "judaism": "यहूदी धर्म",
+      "other": "अन्य",
+      "none": "कोई नहीं"
+    }
+  },
+  "matching": {
+    "findMatches": "मैच खोजें",
+    "like": "पसंद",
+    "pass": "पास",
+    "match": "यह एक मैच है!",
+    "noMoreMatches": "कोई और मैच उपलब्ध नहीं",
+    "tryAgainLater": "बाद में फिर से प्रयास करें",
+    "messagePrompt": "बातचीत शुरू करने के लिए संदेश भेजें",
+    "personalityInsights": "व्यक्तित्व अंतर्दृष्टि",
+    "compatibilityScore": "अनुकूलता स्कोर",
+    "keyTraits": "प्रमुख विशेषताएँ"
+  },
+  "messages": {
+    "title": "संदेश",
+    "noMessages": "अभी तक कोई संदेश नहीं",
+    "startConversation": "बातचीत शुरू करें",
+    "typeMessage": "संदेश टाइप करें...",
+    "send": "भेजें",
+    "today": "आज",
+    "yesterday": "कल"
+  },
+  "subscription": {
+    "title": "सदस्यता",
+    "current": "वर्तमान योजना",
+    "upgrade": "योजना अपग्रेड करें",
+    "basic": "बेसिक",
+    "silver": "सिल्वर",
+    "diamond": "डायमंड",
+    "gold": "गोल्ड",
+    "benefits": "लाभ",
+    "subscribe": "सदस्यता लें",
+    "manageSubscription": "सदस्यता प्रबंधित करें",
+    "expiresOn": "समाप्ति तिथि",
+    "monthly": "मासिक",
+    "yearly": "वार्षिक",
+    "features": {
+      "messaging": "मैसेजिंग",
+      "matches": "असीमित मैच",
+      "verification": "प्राथमिकता सत्यापन",
+      "insights": "व्यक्तित्व अंतर्दृष्टि",
+      "support": "प्राथमिकता समर्थन",
+      "noAds": "कोई विज्ञापन नहीं",
+      "gifting": "प्रीमियम उपहार"
+    }
+  },
+  "wallet": {
+    "title": "वॉलेट",
+    "balance": "बैलेंस",
+    "deposit": "जमा",
+    "withdraw": "निकासी",
+    "send": "उपहार भेजें",
+    "transactions": "लेनदेन",
+    "amount": "राशि",
+    "recipient": "प्राप्तकर्ता",
+    "date": "तारीख",
+    "status": "स्थिति",
+    "type": "प्रकार",
+    "noTransactions": "अभी तक कोई लेनदेन नहीं"
+  },
+  "verification": {
+    "title": "सत्यापन",
+    "instructions": "अपने खाते को सत्यापित करने के लिए इन चरणों का पालन करें",
+    "takeSelfie": "एक सेल्फी लें",
+    "recordVideo": "एक छोटा वीडियो रिकॉर्ड करें",
+    "submit": "सत्यापन के लिए जमा करें",
+    "status": {
+      "pending": "लंबित",
+      "approved": "स्वीकृत",
+      "rejected": "अस्वीकृत"
+    },
+    "rejected": "आपका सत्यापन अस्वीकृत कर दिया गया है",
+    "tryAgain": "कृपया पुनः प्रयास करें"
+  },
+  "settings": {
+    "title": "सेटिंग्स",
+    "account": "खाता",
+    "notifications": "सूचनाएँ",
+    "privacy": "गोपनीयता",
+    "language": "भाषा",
+    "theme": "थीम",
+    "help": "सहायता और समर्थन",
+    "about": "के बारे में",
+    "logout": "लॉगआउट",
+    "deleteAccount": "खाता हटाएं",
+    "themes": {
+      "light": "लाइट",
+      "dark": "डार्क",
+      "system": "सिस्टम"
+    }
+  },
+  "errors": {
+    "generic": "कुछ गलत हुआ",
+    "login": "अमान्य यूजरनेम या पासवर्ड",
+    "register": "खाता बनाने में विफल",
+    "network": "नेटवर्क त्रुटि",
+    "unauthorized": "अनधिकृत",
+    "subscription": "सदस्यता आवश्यक है",
+    "verification": "सत्यापन आवश्यक है",
+    "noMatches": "कोई मैच उपलब्ध नहीं",
+    "retry": "पुन: प्रयास करें"
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "app": {
+    "name": "Tim Clever Date",
+    "slogan": "一次找到一个，遇见完美对象",
+    "description": "专注于高质量连接的约会应用"
+  },
+  "auth": {
+    "login": "登录",
+    "register": "注册",
+    "logout": "退出",
+    "username": "用户名",
+    "password": "密码",
+    "confirmPassword": "确认密码",
+    "forgotPassword": "忘记密码？",
+    "emailPlaceholder": "输入您的邮箱",
+    "passwordPlaceholder": "输入您的密码",
+    "rememberMe": "记住我",
+    "alreadyHaveAccount": "已有账户？",
+    "dontHaveAccount": "没有账户？"
+  },
+  "profile": {
+    "title": "个人资料",
+    "edit": "编辑资料",
+    "firstName": "名字",
+    "lastName": "姓氏",
+    "gender": "性别",
+    "age": "年龄",
+    "location": "位置",
+    "aboutMe": "关于我",
+    "religion": "宗教信仰",
+    "interests": "兴趣爱好",
+    "photos": "照片",
+    "video": "视频",
+    "save": "保存更改",
+    "cancel": "取消",
+    "verification": "身份验证",
+    "verified": "已验证",
+    "notVerified": "未验证",
+    "upgrade": "升级",
+    "genderOptions": {
+      "male": "男",
+      "female": "女"
+    },
+    "religionOptions": {
+      "christianity": "基督教",
+      "islam": "伊斯兰教",
+      "hinduism": "印度教",
+      "buddhism": "佛教",
+      "judaism": "犹太教",
+      "other": "其他",
+      "none": "无"
+    }
+  },
+  "matching": {
+    "findMatches": "寻找匹配",
+    "like": "喜欢",
+    "pass": "跳过",
+    "match": "匹配成功！",
+    "noMoreMatches": "暂无更多匹配",
+    "tryAgainLater": "稍后再试",
+    "messagePrompt": "发送消息开始对话",
+    "personalityInsights": "性格分析",
+    "compatibilityScore": "兼容性评分",
+    "keyTraits": "关键特质"
+  },
+  "messages": {
+    "title": "消息",
+    "noMessages": "暂无消息",
+    "startConversation": "开始对话",
+    "typeMessage": "输入消息...",
+    "send": "发送",
+    "today": "今天",
+    "yesterday": "昨天"
+  },
+  "subscription": {
+    "title": "订阅",
+    "current": "当前计划",
+    "upgrade": "升级计划",
+    "basic": "基础版",
+    "silver": "银卡",
+    "diamond": "钻石卡",
+    "gold": "金卡",
+    "benefits": "福利",
+    "subscribe": "订阅",
+    "manageSubscription": "管理订阅",
+    "expiresOn": "到期日",
+    "monthly": "按月",
+    "yearly": "按年",
+    "features": {
+      "messaging": "消息服务",
+      "matches": "无限匹配",
+      "verification": "优先验证",
+      "insights": "性格分析",
+      "support": "优先支持",
+      "noAds": "无广告",
+      "gifting": "高级礼物"
+    }
+  },
+  "wallet": {
+    "title": "钱包",
+    "balance": "余额",
+    "deposit": "充值",
+    "withdraw": "提现",
+    "send": "发送礼物",
+    "transactions": "交易记录",
+    "amount": "金额",
+    "recipient": "接收人",
+    "date": "日期",
+    "status": "状态",
+    "type": "类型",
+    "noTransactions": "暂无交易记录"
+  },
+  "verification": {
+    "title": "身份验证",
+    "instructions": "请按以下步骤验证您的账户",
+    "takeSelfie": "拍摄自拍照",
+    "recordVideo": "录制短视频",
+    "submit": "提交验证",
+    "status": {
+      "pending": "审核中",
+      "approved": "已通过",
+      "rejected": "已拒绝"
+    },
+    "rejected": "您的验证被拒绝",
+    "tryAgain": "请重试"
+  },
+  "settings": {
+    "title": "设置",
+    "account": "账户",
+    "notifications": "通知",
+    "privacy": "隐私",
+    "language": "语言",
+    "theme": "主题",
+    "help": "帮助与支持",
+    "about": "关于",
+    "logout": "退出登录",
+    "deleteAccount": "删除账户",
+    "themes": {
+      "light": "浅色",
+      "dark": "深色",
+      "system": "系统"
+    }
+  },
+  "errors": {
+    "generic": "出现错误",
+    "login": "用户名或密码无效",
+    "register": "创建账户失败",
+    "network": "网络错误",
+    "unauthorized": "未授权",
+    "subscription": "需要订阅",
+    "verification": "需要验证",
+    "noMatches": "无可用匹配",
+    "retry": "重试"
+  }
+}

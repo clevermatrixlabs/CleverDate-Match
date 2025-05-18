@@ -1,0 +1,155 @@
+{
+  "app": {
+    "name": "Tim Clever Date",
+    "slogan": "Encuentra tu pareja perfecta, una persona a la vez",
+    "description": "La aplicación de citas que se centra en conexiones de calidad"
+  },
+  "auth": {
+    "login": "Iniciar sesión",
+    "register": "Registrarse",
+    "logout": "Cerrar sesión",
+    "username": "Nombre de usuario",
+    "password": "Contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "forgotPassword": "¿Olvidaste tu contraseña?",
+    "emailPlaceholder": "Introduce tu correo electrónico",
+    "passwordPlaceholder": "Introduce tu contraseña",
+    "rememberMe": "Recuérdame",
+    "alreadyHaveAccount": "¿Ya tienes una cuenta?",
+    "dontHaveAccount": "¿No tienes una cuenta?"
+  },
+  "profile": {
+    "title": "Perfil",
+    "edit": "Editar perfil",
+    "firstName": "Nombre",
+    "lastName": "Apellido",
+    "gender": "Género",
+    "age": "Edad",
+    "location": "Ubicación",
+    "aboutMe": "Sobre mí",
+    "religion": "Religión",
+    "interests": "Intereses",
+    "photos": "Fotos",
+    "video": "Vídeo",
+    "save": "Guardar cambios",
+    "cancel": "Cancelar",
+    "verification": "Verificación",
+    "verified": "Verificado",
+    "notVerified": "No verificado",
+    "upgrade": "Mejorar",
+    "genderOptions": {
+      "male": "Hombre",
+      "female": "Mujer"
+    },
+    "religionOptions": {
+      "christianity": "Cristianismo",
+      "islam": "Islam",
+      "hinduism": "Hinduismo",
+      "buddhism": "Budismo",
+      "judaism": "Judaísmo",
+      "other": "Otro",
+      "none": "Ninguno"
+    }
+  },
+  "matching": {
+    "findMatches": "Encontrar parejas",
+    "like": "Me gusta",
+    "pass": "Pasar",
+    "match": "¡Es un match!",
+    "noMoreMatches": "No hay más coincidencias disponibles",
+    "tryAgainLater": "Inténtalo de nuevo más tarde",
+    "messagePrompt": "Envía un mensaje para iniciar una conversación",
+    "personalityInsights": "Análisis de personalidad",
+    "compatibilityScore": "Puntuación de compatibilidad",
+    "keyTraits": "Rasgos clave"
+  },
+  "messages": {
+    "title": "Mensajes",
+    "noMessages": "Aún no hay mensajes",
+    "startConversation": "Inicia una conversación",
+    "typeMessage": "Escribe un mensaje...",
+    "send": "Enviar",
+    "today": "Hoy",
+    "yesterday": "Ayer"
+  },
+  "subscription": {
+    "title": "Suscripción",
+    "current": "Plan actual",
+    "upgrade": "Mejorar plan",
+    "basic": "Básico",
+    "silver": "Plata",
+    "diamond": "Diamante",
+    "gold": "Oro",
+    "benefits": "Beneficios",
+    "subscribe": "Suscribirse",
+    "manageSubscription": "Gestionar suscripción",
+    "expiresOn": "Caduca el",
+    "monthly": "Mensual",
+    "yearly": "Anual",
+    "features": {
+      "messaging": "Mensajería",
+      "matches": "Coincidencias ilimitadas",
+      "verification": "Verificación prioritaria",
+      "insights": "Análisis de personalidad",
+      "support": "Soporte prioritario",
+      "noAds": "Sin publicidad",
+      "gifting": "Regalos premium"
+    }
+  },
+  "wallet": {
+    "title": "Billetera",
+    "balance": "Saldo",
+    "deposit": "Depositar",
+    "withdraw": "Retirar",
+    "send": "Enviar regalo",
+    "transactions": "Transacciones",
+    "amount": "Cantidad",
+    "recipient": "Destinatario",
+    "date": "Fecha",
+    "status": "Estado",
+    "type": "Tipo",
+    "noTransactions": "Aún no hay transacciones"
+  },
+  "verification": {
+    "title": "Verificación",
+    "instructions": "Sigue estos pasos para verificar tu cuenta",
+    "takeSelfie": "Toma una selfie",
+    "recordVideo": "Graba un video corto",
+    "submit": "Enviar para verificación",
+    "status": {
+      "pending": "Pendiente",
+      "approved": "Aprobado",
+      "rejected": "Rechazado"
+    },
+    "rejected": "Tu verificación fue rechazada",
+    "tryAgain": "Por favor, inténtalo de nuevo"
+  },
+  "settings": {
+    "title": "Configuración",
+    "account": "Cuenta",
+    "notifications": "Notificaciones",
+    "privacy": "Privacidad",
+    "language": "Idioma",
+    "theme": "Tema",
+    "help": "Ayuda y soporte",
+    "about": "Acerca de",
+    "logout": "Cerrar sesión",
+    "deleteAccount": "Eliminar cuenta",
+    "themes": {
+      "light": "Claro",
+      "dark": "Oscuro",
+      "system": "Sistema"
+    }
+  },
+  "errors": {
+    "generic": "Algo salió mal",
+    "login": "Usuario o contraseña incorrectos",
+    "register": "Error al crear la cuenta",
+    "network": "Error de red",
+    "unauthorized": "No autorizado",
+    "subscription": "Se requiere suscripción",
+    "verification": "Se requiere verificación",
+    "noMatches": "No hay coincidencias disponibles",
+    "retry": "Reintentar"
+  }
+}
