@@ -16,6 +16,8 @@ export const users = pgTable("users", {
   location: text("location"),
   age: integer("age"),
   isVerified: boolean("is_verified").default(false),
+  isEmailVerified: boolean("is_email_verified").default(false),
+  isPhoneVerified: boolean("is_phone_verified").default(false),
   profilePicture: text("profile_picture"),
   profileVideo: text("profile_video"),
   additionalPicture1: text("additional_picture_1"),

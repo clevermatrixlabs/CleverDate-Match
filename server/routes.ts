@@ -24,6 +24,9 @@ import { db } from "./supabase";
 declare module "express-session" {
   interface SessionData {
     userId: number;
+    emailCode: string;
+    phoneCode: string;
+    pendingUserId: number;
   }
 }
 
@@ -97,7 +100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/register", async (req, res) => {
     try {
       const validatedData = registerSchema.parse(req.body);
-      
+
       // Check if username already exists
       const existingUser = await storage.getUserByUsername(validatedData.username);
       if (existingUser) {
@@ -112,10 +115,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         password: validatedData.password,
         walletBalance: 0,
         isVerified: false,
+        emailVerified: false,
+        phoneVerified: false,
       });
 
       req.session.userId = newUser.id;
-      
+
       res.status(201).json({
         id: newUser.id,
         username: newUser.username,
@@ -132,7 +137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/login", (req, res, next) => {
     try {
       const validatedData = loginSchema.parse(req.body);
-      
+
       passport.authenticate("local", (err: any, user: any, info: any) => {
         if (err) {
           return next(err);
@@ -194,6 +199,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       subscriptionTier: user.subscriptionTier,
       subscriptionExpiry: user.subscriptionExpiry,
       walletBalance: user.walletBalance,
+      emailVerified: user.emailVerified,
+      phoneVerified: user.phoneVerified,
     });
   });
 
@@ -202,7 +209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const { verificationData } = req.body;
-      
+
       if (!verificationData) {
         return res.status(400).json({ message: "Verification data is required" });
       }
@@ -218,6 +225,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           verificationData,
           approvedAt: new Date().toISOString(),
         });
+
+        // Generate and send verification codes
+        const emailCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const phoneCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        // In a real app, send these codes via email and SMS
+        console.log(`Email verification code: ${emailCode}`);
+        console.log(`Phone verification code: ${phoneCode}`);
+
+        // Store codes in session
+        req.session.emailCode = emailCode;
+        req.session.phoneCode = phoneCode;
+        req.session.pendingUserId = user.id;
 
         // Update user verification status
         await storage.updateUser(user.id, { isVerified: true });
@@ -240,11 +260,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Email verification endpoint
+  app.post("/api/verify/email", requireAuth, async (req, res) => {
+    try {
+      const { code } = req.body;
+      const { emailCode, pendingUserId } = req.session;
+
+      if (!code) {
+        return res.status(400).json({ message: "Verification code is required" });
+      }
+
+      if (code !== emailCode) {
+        return res.status(400).json({ message: "Invalid verification code" });
+      }
+
+      // Update user's email verification status
+      await storage.updateUser(pendingUserId, { emailVerified: true });
+
+      // Clear session variables
+      delete req.session.emailCode;
+      delete req.session.pendingUserId;
+
+      res.json({ success: true, message: "Email verified successfully" });
+    } catch (error) {
+      console.error("Email verification error:", error);
+      res.status(500).json({ message: "Email verification failed" });
+    }
+  });
+
+  // Phone verification endpoint
+  app.post("/api/verify/phone", requireAuth, async (req, res) => {
+    try {
+      const { code } = req.body;
+      const { phoneCode, pendingUserId } = req.session;
+
+      if (!code) {
+        return res.status(400).json({ message: "Verification code is required" });
+      }
+
+      if (code !== phoneCode) {
+        return res.status(400).json({ message: "Invalid verification code" });
+      }
+
+      // Update user's phone verification status
+      await storage.updateUser(pendingUserId, { phoneVerified: true });
+
+      // Clear session variables
+      delete req.session.phoneCode;
+      delete req.session.pendingUserId;
+
+      res.json({ success: true, message: "Phone verified successfully" });
+    } catch (error) {
+      console.error("Phone verification error:", error);
+      res.status(500).json({ message: "Phone verification failed" });
+    }
+  });
+
   // Profile routes
   app.post("/api/users/profile", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      
+
       // Parse form data
       const validatedData = profileSchema.parse({
         ...req.body,
@@ -278,22 +354,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/users/me", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      
+
       // Update user
       const updatedUser = await storage.updateUser(user.id, req.body);
-      
+
       res.json(updatedUser);
     } catch (error) {
       console.error("Update user error:", error);
       res.status(500).json({ message: "Failed to update user" });
     }
   });
-  
+
   // Get AI-powered personality insights for your profile
   app.get("/api/users/personality-insights", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      
+
       // Premium feature check
       if (user.subscriptionTier === "none") {
         return res.status(403).json({ 
@@ -301,7 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isPremium: true
         });
       }
-      
+
       // Generate personality insights using AI
       try {
         const { generatePersonalityInsights } = await import('./ai');
@@ -321,10 +397,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/matches/potential", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      
+
       // Get potential matches
       const potentialMatches = await storage.getPotentialMatches(user.id, user.gender);
-      
+
       // Use AI to find optimal matches based on compatibility
       try {
         const { findOptimalMatches } = await import('./ai');
@@ -345,14 +421,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/matches/current", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      
+
       // Get current match
       const currentMatch = await storage.getCurrentMatch(user.id);
-      
+
       if (!currentMatch) {
         return res.status(404).json({ message: "No active match found" });
       }
-      
+
       res.json(currentMatch);
     } catch (error) {
       console.error("Get current match error:", error);
@@ -364,7 +440,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const { userId } = req.body;
-      
+
       if (!userId) {
         return res.status(400).json({ message: "User ID is required" });
       }
@@ -390,7 +466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.updateMatch(reciprocalMatch.id, { status: "accepted" });
         return res.json({ match, isMatched: true });
       }
-      
+
       res.json({ match, isMatched: false });
     } catch (error) {
       console.error("Like error:", error);
@@ -402,7 +478,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const { userId } = req.body;
-      
+
       if (!userId) {
         return res.status(400).json({ message: "User ID is required" });
       }
@@ -413,7 +489,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         matchedUserId: userId,
         status: "rejected",
       });
-      
+
       res.json({ success: true });
     } catch (error) {
       console.error("Pass error:", error);
@@ -425,21 +501,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const matchId = parseInt(req.params.id, 10);
-      
+
       // Get match
       const match = await storage.getMatch(matchId);
-      
+
       if (!match) {
         return res.status(404).json({ message: "Match not found" });
       }
-      
+
       if (match.userId !== user.id && match.matchedUserId !== user.id) {
         return res.status(403).json({ message: "Unauthorized" });
       }
 
       // Update match to rejected
       await storage.updateMatch(matchId, { status: "rejected" });
-      
+
       res.json({ success: true });
     } catch (error) {
       console.error("Unmatch error:", error);
@@ -452,14 +528,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const matchId = parseInt(req.params.matchId, 10);
-      
+
       // Get match
       const match = await storage.getMatch(matchId);
-      
+
       if (!match) {
         return res.status(404).json({ message: "Match not found" });
       }
-      
+
       if (match.userId !== user.id && match.matchedUserId !== user.id) {
         return res.status(403).json({ message: "Unauthorized" });
       }
@@ -471,7 +547,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get messages
       const messages = await storage.getMessages(matchId);
-      
+
       res.json(messages);
     } catch (error) {
       console.error("Get messages error:", error);
@@ -484,18 +560,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = req.user as any;
       const matchId = parseInt(req.params.matchId, 10);
       const { content } = req.body;
-      
+
       if (!content) {
         return res.status(400).json({ message: "Message content is required" });
       }
 
       // Get match
       const match = await storage.getMatch(matchId);
-      
+
       if (!match) {
         return res.status(404).json({ message: "Match not found" });
       }
-      
+
       if (match.userId !== user.id && match.matchedUserId !== user.id) {
         return res.status(403).json({ message: "Unauthorized" });
       }
@@ -508,7 +584,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check for inappropriate content using AI
       const { checkContentAppropriate } = await import('./ai');
       const contentCheck = await checkContentAppropriate(content);
-      
+
       if (!contentCheck.appropriate) {
         return res.status(400).json({ 
           message: "Message contains inappropriate content", 
@@ -527,7 +603,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         content,
         isRead: false,
       });
-      
+
       res.json(message);
     } catch (error) {
       console.error("Send message error:", error);
@@ -540,13 +616,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const { planId } = req.body;
-      
+
       if (!planId) {
         return res.status(400).json({ message: "Plan ID is required" });
       }
 
       let tier, endDate;
-      
+
       // Set subscription details based on the plan
       switch (planId) {
         case "basic":
@@ -592,7 +668,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subscriptionTier: tier,
         subscriptionExpiry: endDate.toISOString(),
       });
-      
+
       res.json({ success: true, subscription });
     } catch (error) {
       console.error("Subscribe error:", error);
@@ -605,7 +681,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const { amount } = req.body;
-      
+
       if (!amount || isNaN(amount) || amount <= 0) {
         return res.status(400).json({ message: "Valid amount is required" });
       }
@@ -622,7 +698,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedUser = await storage.updateUser(user.id, {
         walletBalance: (parseFloat(user.walletBalance) || 0) + parseFloat(amount),
       });
-      
+
       res.json({
         success: true,
         walletBalance: updatedUser.walletBalance,
@@ -637,7 +713,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const { amount } = req.body;
-      
+
       if (!amount || isNaN(amount) || amount <= 0) {
         return res.status(400).json({ message: "Valid amount is required" });
       }
@@ -658,7 +734,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedUser = await storage.updateUser(user.id, {
         walletBalance: parseFloat(user.walletBalance) - parseFloat(amount),
       });
-      
+
       res.json({
         success: true,
         walletBalance: updatedUser.walletBalance,
@@ -673,7 +749,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const { amount, recipientId } = req.body;
-      
+
       if (!amount || isNaN(amount) || amount <= 0) {
         return res.status(400).json({ message: "Valid amount is required" });
       }
@@ -688,7 +764,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get recipient
       const recipient = await storage.getUser(recipientId);
-      
+
       if (!recipient) {
         return res.status(404).json({ message: "Recipient not found" });
       }
@@ -723,7 +799,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateUser(recipientId, {
         walletBalance: (parseFloat(recipient.walletBalance) || 0) + giftAmount,
       });
-      
+
       res.json({
         success: true,
         walletBalance: updatedSender.walletBalance,
@@ -738,17 +814,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/users/:id", requireAuth, async (req, res) => {
     try {
       const userId = parseInt(req.params.id, 10);
-      
+
       // Get user
       const user = await storage.getUser(userId);
-      
+
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
 
       // Remove sensitive information
       const { password, ...userData } = user;
-      
+
       res.json(userData);
     } catch (error) {
       console.error("Get user error:", error);
@@ -766,22 +842,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to get social media links" });
     }
   });
-  
+
   // Admin route to add social media links (would be protected in a real app)
   app.post("/api/socials", async (req, res) => {
     try {
       const { platform, url } = req.body;
-      
+
       if (!platform || !url) {
         return res.status(400).json({ message: "Platform and URL are required" });
       }
-      
+
       const social = await storage.createSocial({
         platform,
         url,
         isActive: true
       });
-      
+
       res.json(social);
     } catch (error) {
       console.error("Create social error:", error);

@@ -22,6 +22,63 @@ export default function VerificationPage() {
   const verificationMutation = useMutation({
     mutationFn: async (verificationData: string) => {
       const res = await apiRequest('POST', '/api/verification', { verificationData });
+
+  const verifyEmail = useMutation({
+    mutationFn: async (code: string) => {
+      const response = await apiRequest("/api/verify/email", {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      });
+      return response;
+    },
+  });
+
+  const verifyPhone = useMutation({
+    mutationFn: async (code: string) => {
+      const response = await apiRequest("/api/verify/phone", {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      });
+      return response;
+    },
+  });
+
+  const showVerificationPrompts = async () => {
+    const emailCode = prompt("Please enter the email verification code:");
+    if (emailCode) {
+      try {
+        await verifyEmail.mutateAsync(emailCode);
+        toast({
+          title: "Email verified",
+          description: "Your email has been successfully verified",
+        });
+      } catch (error) {
+        toast({
+          variant: "destructive",
+          title: "Email verification failed",
+          description: "Please check the code and try again",
+        });
+      }
+    }
+
+    const phoneCode = prompt("Please enter the phone verification code:");
+    if (phoneCode) {
+      try {
+        await verifyPhone.mutateAsync(phoneCode);
+        toast({
+          title: "Phone verified",
+          description: "Your phone number has been successfully verified",
+        });
+      } catch (error) {
+        toast({
+          variant: "destructive",
+          title: "Phone verification failed",
+          description: "Please check the code and try again",
+        });
+      }
+    }
+  };
+
       return res.json();
     },
     onSuccess: () => {
@@ -68,6 +125,7 @@ export default function VerificationPage() {
         if (progress >= 100) {
           clearInterval(interval);
           setVerificationStep(2);
+          showVerificationPrompts();
         }
       }, 300);
       
