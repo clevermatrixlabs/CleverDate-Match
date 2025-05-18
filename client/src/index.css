@@ -3,6 +3,232 @@
 @tailwind utilities;
 
 :root {
+  /* Royal blue color scheme */
+  --primary: #1a365d;        /* Deep royal blue */
+  --primary-light: #2c5282;  /* Lighter royal blue */
+  --primary-dark: #0f2942;   /* Darker royal blue */
+  --accent: #4299e1;         /* Sky blue accent */
+  --accent-light: #63b3ed;   /* Lighter sky blue */
+  --gradient-start: #1a365d;
+  --gradient-end: #2c5282;
+  --success: #48bb78;
+  --warning: #ed8936;
+  --danger: #e53e3e;
+  --text-primary: #2d3748;
+  --text-secondary: #4a5568;
+  --background-light: #f7fafc;
+  --background-white: #ffffff;
+  --card-shadow: 0 10px 15px -3px rgba(26, 54, 93, 0.1), 0 4px 6px -2px rgba(26, 54, 93, 0.05);
+}
+
+/* Body styles */
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--text-primary);
+  background-color: var(--background-light);
+  overflow-x: hidden;
+}
+
+/* Custom gradient header */
+.gradient-header {
+  background: linear-gradient(to right, var(--gradient-start), var(--gradient-end));
+  color: white;
+  padding: 1rem;
+  border-radius: 0 0 1rem 1rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--card-shadow);
+}
+
+/* Card styles */
+.app-card {
+  background: var(--background-white);
+  border-radius: 1rem;
+  box-shadow: var(--card-shadow);
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.app-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 25px -5px rgba(26, 54, 93, 0.1), 0 10px 10px -5px rgba(26, 54, 93, 0.04);
+}
+
+/* Button styles */
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-light);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--primary);
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border: 2px solid var(--primary);
+  border-radius: 0.5rem;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn-secondary:hover {
+  background-color: rgba(26, 54, 93, 0.05);
+}
+
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+/* Input styles with focus effect */
+.input-focus {
+  @apply border-2 border-gray-300 rounded-lg px-4 py-2 w-full;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-focus:focus {
+  @apply outline-none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(26, 54, 93, 0.2);
+}
+
+/* Animation for verification process */
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.pulse-animation {
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes scanning {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 0% 100%; }
+}
+
+.scanning-animation {
+  background: linear-gradient(to bottom, transparent, rgba(66, 153, 225, 0.3), transparent);
+  background-size: 100% 300%;
+  animation: scanning 2s ease-in-out infinite;
+}
+
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+  .gradient-header {
+    border-radius: 0 0 0.75rem 0.75rem;
+    padding: 0.75rem;
+  }
+  
+  .app-card {
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .btn-primary, .btn-secondary {
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+  }
+  
+  /* Improved touch targets for mobile */
+  button, a, input[type="checkbox"], input[type="radio"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Safe area insets for notches on mobile devices */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Improved loading state */
+.loading-container {
+  @apply fixed inset-0 flex items-center justify-center bg-white bg-opacity-75 z-50;
+}
+
+.loading-spinner {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  border: 0.25rem solid var(--primary-light);
+  border-top-color: var(--primary);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Animations for matches and notifications */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.5s ease forwards;
+}
+
+@keyframes heartbeat {
+  0% { transform: scale(1); }
+  25% { transform: scale(1.1); }
+  50% { transform: scale(1); }
+  75% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.heartbeat {
+  animation: heartbeat 1.5s ease-in-out;
+}
+
+/* App-wide transition styles */
+.page-transition-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-transition-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms, transform 300ms;
+}
+
+.page-transition-exit {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-transition-exit-active {
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 300ms, transform 300ms;
+}
+
+:root {
   /* App custom colors */
   --primary: #1a365d;    /* Royal Blue (dark) */
   --primary-light: #2c5282; /* Royal Blue (medium) */
