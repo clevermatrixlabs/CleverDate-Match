@@ -64,7 +64,11 @@ export default function OnboardingPage() {
 
   const onRegisterSubmit = async (data: RegisterForm) => {
     try {
-      await register(data.username, data.password);
+      await register(data.username, data.password, data.email, data.phone);
+      toast({
+        title: "Success",
+        description: "Account created successfully",
+      });
     } catch (error: any) {
       toast({
         variant: "destructive",
