@@ -597,30 +597,42 @@ if (db) {
   console.log("Using Supabase/PostgreSQL database for storage");
   storage = new DrizzleStorage();
   
-  // Initialize socials if none exist
+  // Initialize socials if none exist - with improved error handling
   (async () => {
     try {
+      // Add a delay before attempting to initialize socials
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
       const socials = await storage.getSocials();
       if (socials.length === 0) {
-        await storage.createSocial({
-          platform: "instagram",
-          url: "https://instagram.com/timcleverdate",
-          isActive: true
-        });
-        await storage.createSocial({
-          platform: "twitter",
-          url: "https://twitter.com/timcleverdate",
-          isActive: true
-        });
-        await storage.createSocial({
-          platform: "youtube",
-          url: "https://youtube.com/c/timcleverdate",
-          isActive: true
-        });
-        console.log("Social media links initialized");
+        try {
+          await storage.createSocial({
+            platform: "instagram",
+            url: "https://instagram.com/timcleverdate",
+            isActive: true
+          });
+          
+          await storage.createSocial({
+            platform: "twitter",
+            url: "https://twitter.com/timcleverdate",
+            isActive: true
+          });
+          
+          await storage.createSocial({
+            platform: "youtube",
+            url: "https://youtube.com/c/timcleverdate",
+            isActive: true
+          });
+          
+          console.log("Social media links initialized");
+        } catch (innerError) {
+          console.warn("Could not create social links, will try again later:", innerError);
+          // Non-critical error, application can continue
+        }
       }
     } catch (error) {
-      console.error("Error initializing social links:", error);
+      console.error("Error checking social links:", error);
+      console.log("Social initialization deferred - app will continue");
     }
   })();
 } else {

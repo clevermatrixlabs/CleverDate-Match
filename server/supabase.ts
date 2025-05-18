@@ -1,3 +1,4 @@
+
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
@@ -16,12 +17,13 @@ if (databaseUrl) {
     // Create postgres client with improved connection settings
     const client = postgres(databaseUrl, { 
       prepare: false,
-      connect_timeout: 30,
-      max_retries: 3,
-      retry_interval: 5,
+      connect_timeout: 60, // Increased timeout
+      max_retries: 5,      // Increased retries
+      retry_interval: 3,   // Shorter interval between retries
       idle_timeout: 120,
       max_lifetime: 60 * 30,
-      connection_timeout: 30000,
+      connection_limit: 10,
+      connection_timeout: 60000, // Increased connection timeout
       keepalive: true
     });
     
