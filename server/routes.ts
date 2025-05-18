@@ -107,6 +107,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // In a real app, you would hash the password before storing it
       const newUser = await storage.createUser({
         username: validatedData.username,
+        email: validatedData.email,
+        phone: validatedData.phone,
         password: validatedData.password,
         walletBalance: 0,
         isVerified: false,

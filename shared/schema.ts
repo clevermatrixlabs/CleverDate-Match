@@ -157,9 +157,13 @@ export const loginSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
-export const registerSchema = loginSchema.extend({
-  confirmPassword: z.string().min(6, "Password must be at least 6 characters"),
-}).refine(data => data.password === data.confirmPassword, {
+export const registerSchema = z.object({
+  username: z.string().min(3).max(50),
+  email: z.string().email(),
+  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number"),
+  password: z.string().min(8),
+  confirmPassword: z.string()
+}).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
 });

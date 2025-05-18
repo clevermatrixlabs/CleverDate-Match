@@ -43,6 +43,8 @@ export default function OnboardingPage() {
     resolver: zodResolver(registerSchema),
     defaultValues: {
       username: '',
+      email: '',
+      phone: '',
       password: '',
       confirmPassword: '',
     },
@@ -182,6 +184,32 @@ export default function OnboardingPage() {
                           <FormLabel>Username</FormLabel>
                           <FormControl>
                             <Input {...field} autoComplete="username" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={registerForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="email" autoComplete="email" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={registerForm.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="tel" autoComplete="tel" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
