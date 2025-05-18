@@ -2,50 +2,48 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
-// Import translations
-import enTranslation from './locales/en.json';
-import esTranslation from './locales/es.json';
-import frTranslation from './locales/fr.json';
-import zhTranslation from './locales/zh.json';
-import arTranslation from './locales/ar.json';
-import hiTranslation from './locales/hi.json';
+// Import language resources
+import en from './locales/en.json';
+import es from './locales/es.json';
+import fr from './locales/fr.json';
+import zh from './locales/zh.json';
+import ar from './locales/ar.json';
+import hi from './locales/hi.json';
 
-const resources = {
-  en: {
-    translation: enTranslation
-  },
-  es: {
-    translation: esTranslation
-  },
-  fr: {
-    translation: frTranslation
-  },
-  zh: {
-    translation: zhTranslation
-  },
-  ar: {
-    translation: arTranslation
-  },
-  hi: {
-    translation: hiTranslation
+// Determine environment for debug mode
+const isDevMode = () => {
+  try {
+    return import.meta.env.MODE === 'development';
+  } catch (e) {
+    return false;
   }
 };
 
+// Initialize i18next
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    resources,
+    resources: {
+      en: { translation: en },
+      es: { translation: es },
+      fr: { translation: fr },
+      zh: { translation: zh },
+      ar: { translation: ar },
+      hi: { translation: hi },
+    },
     fallbackLng: 'en',
-    debug: process.env.NODE_ENV === 'development',
+    debug: isDevMode(),
     interpolation: {
-      escapeValue: false, // not needed for React
+      escapeValue: false, // React already safes from XSS
     },
     detection: {
       order: ['localStorage', 'navigator'],
-      lookupLocalStorage: 'preferredLanguage',
       caches: ['localStorage'],
-    }
+    },
+    react: {
+      useSuspense: false, // Disable suspense to prevent issues
+    },
   });
 
 export default i18n;

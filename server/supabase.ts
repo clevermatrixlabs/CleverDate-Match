@@ -17,14 +17,22 @@ if (databaseUrl) {
     // Create postgres client with improved connection settings
     const client = postgres(databaseUrl, { 
       prepare: false,
-      connect_timeout: 60, // Increased timeout
-      max_retries: 5,      // Increased retries
-      retry_interval: 3,   // Shorter interval between retries
-      idle_timeout: 120,
-      max_lifetime: 60 * 30,
-      connection_limit: 10,
-      connection_timeout: 60000, // Increased connection timeout
-      keepalive: true
+      connect_timeout: 120, // Increased timeout further
+      max_retries: 10,      // Increased retries further
+      retry_interval: 5,    // Slightly longer interval between retries
+      idle_timeout: 180,
+      max_lifetime: 60 * 60,
+      connection_limit: 20,
+      connection_timeout: 120000, // Increased connection timeout
+      keepalive: true,
+      types: {
+        date: {
+          to: 1184,
+          from: [1082, 1083, 1114, 1184],
+          serialize: (date: Date) => date.toISOString(),
+          parse: (str: string) => new Date(str),
+        },
+      },
     });
     
     // Initialize drizzle with the client

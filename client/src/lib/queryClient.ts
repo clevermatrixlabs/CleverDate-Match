@@ -6,35 +6,69 @@ import { QueryClient } from '@tanstack/react-query';
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      retry: 3,
       refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5, // 5 minutes
     },
   },
 });
 
-// Create the Supabase client
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseKey = import.meta.env.VITE_SUPABASE_KEY || '';
+// Create the Supabase client with proper environment variable handling
+let supabaseUrl = '';
+let supabaseKey = '';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// Safely access env variables to prevent "process is not defined" errors
+try {
+  supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
+} catch (e) {
+  console.warn('Failed to load environment variables, using fallback');
+  // Fallback values if needed
+  if (!supabaseUrl) supabaseUrl = 'https://kdyuewasapwyvfricivy.supabase.co';
+}
 
-// API request helper function
-export const apiRequest = async (method: string, endpoint: string, data?: any) => {
-  const response = await fetch(`/api${endpoint}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: 'include',
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'API request failed');
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
   }
+});
 
-  return response.json();
+// API request helper function with improved error handling
+export const apiRequest = async (method: string, endpoint: string, data?: any) => {
+  try {
+    const response = await fetch(`/api${endpoint}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: 'include',
+    });
+
+    // Handle non-JSON responses gracefully
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const jsonResponse = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(jsonResponse.message || 'API request failed');
+      }
+      
+      return jsonResponse;
+    } else {
+      const textResponse = await response.text();
+      
+      if (!response.ok) {
+        throw new Error(textResponse || 'API request failed');
+      }
+      
+      return { message: textResponse };
+    }
+  } catch (error) {
+    console.error('API request error:', error);
+    throw error;
+  }
 };
 
 // Query functions

@@ -18,12 +18,12 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, userData: Partial<User>): Promise<User>;
-  
+
   // Verification methods
   createVerification(verification: InsertVerification): Promise<Verification>;
   getVerification(id: number): Promise<Verification | undefined>;
   getVerificationByUserId(userId: number): Promise<Verification | undefined>;
-  
+
   // Match methods
   createMatch(match: InsertMatch): Promise<Match>;
   getMatch(id: number): Promise<Match | undefined>;
@@ -32,20 +32,20 @@ export interface IStorage {
   updateMatch(id: number, matchData: Partial<Match>): Promise<Match>;
   getPotentialMatches(userId: number, gender: "male" | "female" | null): Promise<User[]>;
   getAllActiveMatches(): Promise<Match[]>;
-  
+
   // Message methods
   createMessage(message: InsertMessage): Promise<Message>;
   getMessages(matchId: number): Promise<Message[]>;
-  
+
   // Subscription methods
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
   getSubscription(id: number): Promise<Subscription | undefined>;
   getUserSubscription(userId: number): Promise<Subscription | undefined>;
-  
+
   // Transaction methods
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
   getTransactions(userId: number): Promise<Transaction[]>;
-  
+
   // Social methods
   createSocial(social: InsertSocial): Promise<Social>;
   getSocials(): Promise<Social[]>;
@@ -61,7 +61,7 @@ export class MemStorage implements IStorage {
   private subscriptions: Map<number, Subscription> = new Map();
   private transactions: Map<number, Transaction> = new Map();
   private socials: Map<number, Social> = new Map();
-  
+
   // ID counters
   private currentUserId = 1;
   private currentVerificationId = 1;
@@ -119,7 +119,7 @@ export class MemStorage implements IStorage {
     if (!existingUser) {
       throw new Error(`User with ID ${id} not found`);
     }
-    
+
     const updatedUser = { 
       ...existingUser, 
       ...userData,
@@ -128,7 +128,7 @@ export class MemStorage implements IStorage {
     this.users.set(id, updatedUser);
     return updatedUser;
   }
-  
+
   // Verification methods
   async createVerification(verification: InsertVerification): Promise<Verification> {
     const id = this.currentVerificationId++;
@@ -151,7 +151,7 @@ export class MemStorage implements IStorage {
       .filter(v => v.userId === userId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
   }
-  
+
   // Match methods
   async createMatch(match: InsertMatch): Promise<Match> {
     const id = this.currentMatchId++;
@@ -193,7 +193,7 @@ export class MemStorage implements IStorage {
     if (!existingMatch) {
       throw new Error(`Match with ID ${id} not found`);
     }
-    
+
     const updatedMatch = { 
       ...existingMatch, 
       ...matchData,
@@ -208,7 +208,7 @@ export class MemStorage implements IStorage {
     if (!user || !user.gender) return [];
 
     const oppositeGender = user.gender === "male" ? "female" : "male";
-    
+
     // Get IDs of users already interacted with
     const interactedUserIds = new Set<number>();
     for (const match of this.matches.values()) {
@@ -218,7 +218,7 @@ export class MemStorage implements IStorage {
         interactedUserIds.add(match.userId);
       }
     }
-    
+
     // Find potential matches
     return Array.from(this.users.values()).filter(u => 
       u.id !== userId &&
@@ -227,12 +227,12 @@ export class MemStorage implements IStorage {
       !interactedUserIds.has(u.id)
     );
   }
-  
+
   async getAllActiveMatches(): Promise<Match[]> {
     return Array.from(this.matches.values())
       .filter(match => match.status === "accepted");
   }
-  
+
   // Message methods
   async createMessage(message: InsertMessage): Promise<Message> {
     const id = this.currentMessageId++;
@@ -251,7 +251,7 @@ export class MemStorage implements IStorage {
       .filter(message => message.matchId === matchId)
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }
-  
+
   // Subscription methods
   async createSubscription(subscription: InsertSubscription): Promise<Subscription> {
     const id = this.currentSubscriptionId++;
@@ -274,7 +274,7 @@ export class MemStorage implements IStorage {
       .filter(sub => sub.userId === userId && sub.status === "active")
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
   }
-  
+
   // Transaction methods
   async createTransaction(transaction: InsertTransaction): Promise<Transaction> {
     const id = this.currentTransactionId++;
@@ -293,7 +293,7 @@ export class MemStorage implements IStorage {
       .filter(tx => tx.userId === userId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
-  
+
   // Social methods
   async createSocial(social: InsertSocial): Promise<Social> {
     const id = this.currentSocialId++;
@@ -351,7 +351,7 @@ export class DrizzleStorage implements IStorage {
       .returning();
     return results[0];
   }
-  
+
   // Verification methods
   async createVerification(verification: InsertVerification): Promise<Verification> {
     if (!db) throw new Error("Database not available");
@@ -378,7 +378,7 @@ export class DrizzleStorage implements IStorage {
       .limit(1);
     return results[0];
   }
-  
+
   // Match methods
   async createMatch(match: InsertMatch): Promise<Match> {
     if (!db) throw new Error("Database not available");
@@ -447,7 +447,7 @@ export class DrizzleStorage implements IStorage {
 
   async getPotentialMatches(userId: number, gender: "male" | "female" | null): Promise<User[]> {
     if (!db) return [];
-    
+
     // Get the user to find out their gender
     const user = await this.getUser(userId);
     if (!user || !user.gender) return [];
@@ -468,7 +468,7 @@ export class DrizzleStorage implements IStorage {
           )
         )
       );
-    
+
     const interactedUserIds = interactions.map(match => 
       match.userId === userId ? match.matchedUserId : match.userId
     );
@@ -485,10 +485,10 @@ export class DrizzleStorage implements IStorage {
         )
       )
       .limit(10);
-    
+
     return results;
   }
-  
+
   async getAllActiveMatches(): Promise<Match[]> {
     if (!db) return [];
     const results = await db
@@ -497,7 +497,7 @@ export class DrizzleStorage implements IStorage {
       .where(eq(schema.matches.status, "accepted"));
     return results;
   }
-  
+
   // Message methods
   async createMessage(message: InsertMessage): Promise<Message> {
     if (!db) throw new Error("Database not available");
@@ -517,7 +517,7 @@ export class DrizzleStorage implements IStorage {
       .orderBy(schema.messages.timestamp);
     return results;
   }
-  
+
   // Subscription methods
   async createSubscription(subscription: InsertSubscription): Promise<Subscription> {
     if (!db) throw new Error("Database not available");
@@ -549,7 +549,7 @@ export class DrizzleStorage implements IStorage {
       .limit(1);
     return results[0];
   }
-  
+
   // Transaction methods
   async createTransaction(transaction: InsertTransaction): Promise<Transaction> {
     if (!db) throw new Error("Database not available");
@@ -569,7 +569,7 @@ export class DrizzleStorage implements IStorage {
       .orderBy(desc(schema.transactions.createdAt));
     return results;
   }
-  
+
   // Social methods
   async createSocial(social: InsertSocial): Promise<Social> {
     if (!db) throw new Error("Database not available");
@@ -596,13 +596,17 @@ let storage: IStorage;
 if (db) {
   console.log("Using Supabase/PostgreSQL database for storage");
   storage = new DrizzleStorage();
-  
-  // Initialize socials if none exist - with improved error handling
-  (async () => {
+
+  // Initialize socials if none exist - with improved error handling and retry mechanism
+(async () => {
+  let retries = 0;
+  const maxRetries = 5;
+  const retryDelay = 5000; // 5 seconds
+
+  const initializeSocials = async () => {
     try {
-      // Add a delay before attempting to initialize socials
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
+      console.log(`Attempt ${retries + 1}/${maxRetries} to initialize social media links...`);
+
       const socials = await storage.getSocials();
       if (socials.length === 0) {
         try {
@@ -611,30 +615,53 @@ if (db) {
             url: "https://instagram.com/timcleverdate",
             isActive: true
           });
-          
+
           await storage.createSocial({
             platform: "twitter",
             url: "https://twitter.com/timcleverdate",
             isActive: true
           });
-          
+
           await storage.createSocial({
             platform: "youtube",
             url: "https://youtube.com/c/timcleverdate",
             isActive: true
           });
-          
-          console.log("Social media links initialized");
+
+          console.log("Social media links initialized successfully");
+          return true;
         } catch (innerError) {
-          console.warn("Could not create social links, will try again later:", innerError);
-          // Non-critical error, application can continue
+          console.warn("Could not create social links:", innerError);
+          return false;
         }
+      } else {
+        console.log("Social media links already exist");
+        return true;
       }
     } catch (error) {
-      console.error("Error checking social links:", error);
-      console.log("Social initialization deferred - app will continue");
+      console.error(`Error checking social links (attempt ${retries + 1}/${maxRetries}):`, error);
+      return false;
     }
-  })();
+  };
+
+  // Initial delay before first attempt
+  await new Promise(resolve => setTimeout(resolve, 5000));
+
+  while (retries < maxRetries) {
+    const success = await initializeSocials();
+    if (success) break;
+
+    retries++;
+    if (retries < maxRetries) {
+      console.log(`Retrying in ${retryDelay/1000} seconds...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
+  }
+
+  if (retries >= maxRetries) {
+    console.log("Maximum retry attempts reached for social initialization - app will continue");
+  }
+})();
 } else {
   console.log("Using in-memory storage (no database connection)");
   storage = new MemStorage();
