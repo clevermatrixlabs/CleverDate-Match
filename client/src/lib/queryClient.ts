@@ -3,18 +3,27 @@ import { QueryClient } from '@tanstack/react-query';
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
       retry: 1,
+      staleTime: 5 * 60 * 1000,
     },
   },
-});
+}) as QueryClient;
 
-export const getQueryFn = async ({ queryKey }: { queryKey: string[] }) => {
-  const [endpoint] = queryKey;
-  const response = await fetch(`/api/${endpoint}`);
+// Initialize before exporting
+export const getQueryFn = async (url: string, method = "GET", body?: any) => {
+  const response = await fetch(url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    credentials: "include",
+  });
+
   if (!response.ok) {
-    throw new Error('Network response was not ok');
+    throw new Error(await response.text());
   }
+
   return response.json();
 };
 

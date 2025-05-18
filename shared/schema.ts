@@ -161,13 +161,16 @@ export const loginSchema = z.object({
 
 export const registerSchema = z.object({
   username: z.string().min(3).max(50),
-  email: z.string().email(),
-  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number"),
+  email: z.string().email().optional(),
+  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number").optional(),
   password: z.string().min(8),
   confirmPassword: z.string()
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
+}).refine((data) => data.email || data.phone, {
+  message: "Either email or phone number is required",
+  path: ["email"],
 });
 
 export type LoginForm = z.infer<typeof loginSchema>;
