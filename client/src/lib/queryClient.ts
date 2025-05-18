@@ -1,12 +1,31 @@
 
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+type UnauthorizedBehavior = "returnNull" | "throw";
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const error = await res.json();
+    const error = await res.json().catch(() => ({ message: res.statusText }));
     throw new Error(error.message || 'API request failed');
   }
 }
+
+export const getQueryFn: <T>(options: {
+  on401?: UnauthorizedBehavior;
+}) => QueryFunction<T> =
+  ({ on401 = "returnNull" }) =>
+  async ({ queryKey: [url] }) => {
+    const res = await fetch(url as string, {
+      credentials: "include",
+    });
+    
+    if (on401 === "returnNull" && res.status === 401) {
+      return null;
+    }
+    
+    await throwIfResNotOk(res);
+    return await res.json();
+  };
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,23 +42,10 @@ export const queryClient = new QueryClient({
   },
 });
 
-type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401?: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401 = "returnNull" }) =>
-  async ({ queryKey: [url] }) => {
-    const res = await fetch(url as string, {
-      credentials: "include",
-    });
-    await throwIfResNotOk(res);
-    return await res.json();
-  };
-
 export async function apiRequest(
   method: string,
   endpoint: string,
-  data?: any,
+  body?: unknown,
   headers: HeadersInit = {}
 ) {
   const baseUrl = import.meta.env.VITE_API_URL || '';
@@ -47,12 +53,13 @@ export async function apiRequest(
   const response = await fetch(`${baseUrl}${endpoint}`, {
     method,
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...headers,
     },
-    credentials: 'include',
-    ...(data ? { body: JSON.stringify(data) } : {}),
+    body: body ? JSON.stringify(body) : undefined,
+    credentials: "include",
   });
 
-  return response;
+  await throwIfResNotOk(response);
+  return response.json();
 }
