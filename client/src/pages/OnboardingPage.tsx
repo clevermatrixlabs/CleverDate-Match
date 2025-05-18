@@ -51,12 +51,11 @@ export default function OnboardingPage() {
   const onLoginSubmit = async (data: LoginForm) => {
     try {
       await login(data.username, data.password);
-      navigate('/app');
-    } catch (error) {
+    } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Login failed",
-        description: "Please check your credentials and try again",
+        description: error.message || "Please check your credentials and try again",
       });
     }
   };
@@ -64,12 +63,11 @@ export default function OnboardingPage() {
   const onRegisterSubmit = async (data: RegisterForm) => {
     try {
       await register(data.username, data.password);
-      navigate('/verify');
-    } catch (error) {
+    } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Registration failed",
-        description: "Please try with a different username",
+        description: error.message || "Please try with a different username",
       });
     }
   };

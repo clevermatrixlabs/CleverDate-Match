@@ -42,6 +42,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginMutation = useMutation({
     mutationFn: async ({ username, password }: { username: string; password: string }) => {
       const res = await apiRequest('POST', '/api/auth/login', { username, password });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Login failed');
+      }
       return res.json();
     },
     onSuccess: (data) => {
@@ -53,6 +57,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registerMutation = useMutation({
     mutationFn: async ({ username, password }: { username: string; password: string }) => {
       const res = await apiRequest('POST', '/api/auth/register', { username, password });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Registration failed');
+      }
       return res.json();
     },
     onSuccess: (data) => {
