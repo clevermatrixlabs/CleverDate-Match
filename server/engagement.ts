@@ -10,22 +10,26 @@ const userConnections = new Map<number, Set<WebSocket>>();
 export function setupEngagementService(server: Server) {
   const wss = new WebSocketServer({ server, path: '/ws' });
   
-  wss.on('connection', (ws: WebSocket) => {
-    let userId: number | null = null;
+  wss.on('connection', (ws: WebSocket & { isAlive?: boolean; userId?: number | null }) => {
+    ws.isAlive = true;
+    ws.userId = null;
     
-    ws.on('message', (message: string) => {
+    // Use addEventListener for compatibility
+    ws.addEventListener('message', (event) => {
       try {
-        const data = JSON.parse(message);
+        const data = JSON.parse(event.data.toString());
         
         // Handle authentication
         if (data.type === 'auth' && data.userId) {
-          userId = data.userId;
+          ws.userId = data.userId;
           
           // Add this connection to the user's set of connections
-          if (!userConnections.has(userId)) {
-            userConnections.set(userId, new Set());
+          if (!userConnections.has(ws.userId)) {
+            userConnections.set(ws.userId, new Set());
           }
-          userConnections.get(userId)?.add(ws);
+          userConnections.get(ws.userId)?.add(ws);
+          
+          console.log(`User ${ws.userId} authenticated via WebSocket`);
           
           // Send confirmation
           ws.send(JSON.stringify({ type: 'auth', success: true }));
@@ -36,15 +40,22 @@ export function setupEngagementService(server: Server) {
       }
     });
     
+    // Set up ping-pong to keep connection alive
+    ws.addEventListener('pong', () => {
+      ws.isAlive = true;
+    });
+    
     // Remove connection when closed
-    ws.on('close', () => {
-      if (userId && userConnections.has(userId)) {
-        userConnections.get(userId)?.delete(ws);
+    ws.addEventListener('close', () => {
+      if (ws.userId && userConnections.has(ws.userId)) {
+        userConnections.get(ws.userId)?.delete(ws);
         
         // Clean up empty sets
-        if (userConnections.get(userId)?.size === 0) {
-          userConnections.delete(userId);
+        if (userConnections.get(ws.userId)?.size === 0) {
+          userConnections.delete(ws.userId);
         }
+        
+        console.log(`User ${ws.userId} disconnected from WebSocket`);
       }
     });
   });
