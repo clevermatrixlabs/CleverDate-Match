@@ -115,20 +115,20 @@ export default function VerificationPage() {
       });
       setVideoStream(stream);
       setVerificationStep(1);
-      
+
       // Start progress animation
       let progress = 0;
       const interval = setInterval(() => {
         progress += 5;
         setVerificationProgress(progress);
-        
+
         if (progress >= 100) {
           clearInterval(interval);
           setVerificationStep(2);
           showVerificationPrompts();
         }
       }, 300);
-      
+
     } catch (error) {
       toast({
         variant: "destructive",
@@ -144,16 +144,16 @@ export default function VerificationPage() {
     // 1. Capture frames from the video stream
     // 2. Send them to the server for AI verification using OpenAI
     // 3. Process the verification results
-    
+
     // Simulate capturing video frames for verification
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    
+
     if (videoRef.current && context) {
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
       context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      
+
       // Get base64 data from canvas
       const verificationData = canvas.toDataURL('image/jpeg').split(',')[1];
       verificationMutation.mutate(verificationData);
@@ -162,7 +162,7 @@ export default function VerificationPage() {
       const verificationData = "base64_encoded_verification_data";
       verificationMutation.mutate(verificationData);
     }
-    
+
     // Clean up the video stream
     if (videoStream) {
       videoStream.getTracks().forEach(track => track.stop());
@@ -180,7 +180,7 @@ export default function VerificationPage() {
           <div className="mb-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Enhance Your Security</h3>
             <p className="text-gray-600 mb-4">We use advanced facial verification to ensure Tim Clever Date remains safe and authentic.</p>
-            
+
             <div className={`verification-container rounded-xl p-5 mb-6 ${verificationStep === 2 ? 'bg-primary-light' : 'bg-primary'}`}>
               <div className="flex flex-col items-center justify-center">
                 {!isVerifying && (
@@ -197,7 +197,7 @@ export default function VerificationPage() {
                     </Button>
                   </>
                 )}
-                
+
                 {isVerifying && videoStream && verificationStep === 1 && (
                   <>
                     <div className="relative mb-4">
@@ -220,7 +220,7 @@ export default function VerificationPage() {
                     </p>
                   </>
                 )}
-                
+
                 {isVerifying && verificationStep === 2 && (
                   <>
                     <div className="mb-4 flex items-center justify-center">
@@ -264,5 +264,11 @@ export default function VerificationPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+const VerificationForm = () => {
+  return (
+    <div>Verification Form</div>
   );
 }

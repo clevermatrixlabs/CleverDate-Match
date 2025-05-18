@@ -1,7 +1,22 @@
+import { QueryClient } from '@tanstack/react-query';
 
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      retry: 1,
+    },
+  },
+});
 
-type UnauthorizedBehavior = "returnNull" | "throw";
+export const getQueryFn = async ({ queryKey }: { queryKey: string[] }) => {
+  const [endpoint] = queryKey;
+  const response = await fetch(`/api/${endpoint}`);
+  if (!response.ok) {
+    throw new Error('Network response was not ok');
+  }
+  return response.json();
+};
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -9,38 +24,6 @@ async function throwIfResNotOk(res: Response) {
     throw new Error(error.message || 'API request failed');
   }
 }
-
-export const getQueryFn: <T>(options: {
-  on401?: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401 = "returnNull" }) =>
-  async ({ queryKey: [url] }) => {
-    const res = await fetch(url as string, {
-      credentials: "include",
-    });
-    
-    if (on401 === "returnNull" && res.status === 401) {
-      return null;
-    }
-    
-    await throwIfResNotOk(res);
-    return await res.json();
-  };
-
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
-      queryFn: getQueryFn({ on401: "throw" }),
-    },
-    mutations: {
-      retry: false,
-    },
-  },
-});
 
 export async function apiRequest(
   method: string,
