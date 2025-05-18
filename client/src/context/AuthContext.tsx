@@ -2,8 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { User } from '@/types';
-import { apiRequest } from '@/lib/queryClient';
-import { queryClient } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 
 interface AuthContextType {
   user: User | null;

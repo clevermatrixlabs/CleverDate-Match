@@ -1,57 +1,38 @@
 import { QueryClient } from '@tanstack/react-query';
 
+// Create the query client instance
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 5 * 60 * 1000,
+      staleTime: 1000 * 60 * 5, // 5 minutes
     },
   },
-}) as QueryClient;
+});
 
-// Initialize before exporting
-export const getQueryFn = async (url: string, method = "GET", body?: any) => {
-  const response = await fetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-
-  return response.json();
-};
-
-async function throwIfResNotOk(res: Response) {
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(error.message || 'API request failed');
-  }
-}
-
+// API request helper function
 export async function apiRequest(
   method: string,
   endpoint: string,
-  body?: unknown,
-  headers: HeadersInit = {}
+  body?: any,
+  headers?: HeadersInit
 ) {
-  const baseUrl = import.meta.env.VITE_API_URL || '';
-
-  const response = await fetch(`${baseUrl}${endpoint}`, {
+  const options: RequestInit = {
     method,
+    credentials: 'include',
     headers: {
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
       ...headers,
     },
-    body: body ? JSON.stringify(body) : undefined,
-    credentials: "include",
-  });
+  };
 
-  await throwIfResNotOk(response);
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(endpoint, options);
+  if (!response.ok) {
+      throw new Error(await response.text());
+  }
   return response.json();
 }
