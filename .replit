@@ -16,7 +16,7 @@ localPort = 5000
 externalPort = 80
 
 [workflows]
-runButton = "Run with fault tolerance"
+runButton = "Run with Optimizations"
 
 [[workflows.workflow]]
 name = "Project"
@@ -38,6 +38,15 @@ waitForPort = 5000
 
 [[workflows.workflow]]
 name = "Run with fault tolerance"
+author = 42851235
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "NODE_OPTIONS=\"--max-old-space-size=2048\" npm run dev"
+
+[[workflows.workflow]]
+name = "Run with Optimizations"
 author = 42851235
 mode = "sequential"
 

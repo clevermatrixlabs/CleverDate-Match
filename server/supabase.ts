@@ -1,50 +1,29 @@
-
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "@shared/schema";
 
-// Check if DATABASE_URL is available
-const databaseUrl = process.env.DATABASE_URL;
+export let db: ReturnType<typeof drizzle> | null = null;
 
-// Initialize database connection if URL is available
-let db: ReturnType<typeof drizzle> | null = null;
+// Initialize the database connection
+(async () => {
+  console.log('Connecting to Supabase PostgreSQL database...');
 
-if (databaseUrl) {
   try {
-    // Log database connection attempt
-    console.log("Connecting to Supabase PostgreSQL database...");
-    
-    // Create postgres client with improved connection settings
-    const client = postgres(databaseUrl, { 
-      prepare: false,
-      connect_timeout: 180, // Increased timeout even further
-      max_retries: 15,      // More retries
-      retry_interval: 10,   // Longer interval between retries
-      idle_timeout: 300,
-      max_lifetime: 60 * 60,
-      connection_limit: 10, // Reduced connection limit to prevent overloading
-      connection_timeout: 180000, // Increased connection timeout
-      keepalive: true,
-      types: {
-        date: {
-          to: 1184,
-          from: [1082, 1083, 1114, 1184],
-          serialize: (date: Date) => date.toISOString(),
-          parse: (str: string) => new Date(str),
-        },
-      },
-    });
-    
-    // Initialize drizzle with the client
-    db = drizzle(client, { schema });
-    
-    console.log("Successfully connected to Supabase PostgreSQL database");
-  } catch (err) {
-    console.error("Failed to connect to Supabase PostgreSQL database:", err);
-    console.log("Using in-memory storage as fallback");
-  }
-} else {
-  console.log("DATABASE_URL not found. Using in-memory storage");
-}
+    // If there's a DATABASE_URL in the environment, use it
+    if (process.env.DATABASE_URL) {
+      const client = postgres(process.env.DATABASE_URL, {
+        max: 5, // Maximum number of connections
+        idle_timeout: 20, // Close connections after 20 seconds of inactivity
+        connect_timeout: 10, // Connection timeout of 10 seconds
+        max_lifetime: 60 * 30 // Connection lifetime of 30 minutes
+      });
 
-export { db };
+      db = drizzle(client, { schema });
+      console.log('Successfully connected to Supabase PostgreSQL database');
+    } else {
+      console.warn('No DATABASE_URL found in environment, database features will be disabled');
+    }
+  } catch (error) {
+    console.error('Failed to connect to database:', error);
+  }
+})();
