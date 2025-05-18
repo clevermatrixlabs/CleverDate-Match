@@ -465,6 +465,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Subscription required to send messages" });
       }
 
+      // Check for inappropriate content using AI
+      const { checkContentAppropriate } = await import('./ai');
+      const contentCheck = await checkContentAppropriate(content);
+      
+      if (!contentCheck.isAppropriate) {
+        return res.status(400).json({ 
+          message: "Message contains inappropriate content", 
+          reasons: contentCheck.reasons 
+        });
+      }
+
       // Determine recipient
       const recipientId = match.userId === user.id ? match.matchedUserId : match.userId;
 

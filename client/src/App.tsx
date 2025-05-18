@@ -36,15 +36,20 @@ function Router() {
   );
 }
 
+// Import WebSocket provider
+import { WebSocketProvider } from "@/context/WebSocketContext";
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <MatchProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
+          <WebSocketProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Router />
+            </TooltipProvider>
+          </WebSocketProvider>
         </MatchProvider>
       </AuthProvider>
     </QueryClientProvider>
