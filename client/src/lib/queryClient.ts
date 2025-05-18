@@ -13,7 +13,7 @@ export const queryClient = new QueryClient({
 });
 
 // Create the Supabase client
-const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_KEY || '';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
