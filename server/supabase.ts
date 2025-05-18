@@ -16,10 +16,13 @@ if (databaseUrl) {
     // Create postgres client with improved connection settings
     const client = postgres(databaseUrl, { 
       prepare: false,
-      connect_timeout: 60,    // Increase connection timeout to 60 seconds
-      idle_timeout: 60,       // Timeout for idle connections
-      max_lifetime: 60 * 60,  // Connection max lifetime of 60 minutes
-      max_lifetime_jitter: 10 // Add jitter to prevent all connections from expiring at once
+      connect_timeout: 30,
+      max_retries: 3,
+      retry_interval: 5,
+      idle_timeout: 120,
+      max_lifetime: 60 * 30,
+      connection_timeout: 30000,
+      keepalive: true
     });
     
     // Initialize drizzle with the client
