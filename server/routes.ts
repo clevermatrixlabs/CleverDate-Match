@@ -10,6 +10,7 @@ import { z } from "zod";
 import { 
   loginSchema, 
   registerSchema,
+  phoneRegisterSchema,
   profileSchema,
   insertMatchSchema, 
   insertMessageSchema,
@@ -54,18 +55,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // Configure passport
+  // Configure passport — use email as username field
   passport.use(
-    new LocalStrategy(async (username, password, done) => {
+    new LocalStrategy({ usernameField: "email" }, async (email, password, done) => {
       try {
-        const user = await storage.getUserByUsername(username);
+        let user = await storage.getUserByEmail(email);
+        // fallback: try phone lookup if email looks like a phone number
+        if (!user && email.startsWith("+")) {
+          user = await storage.getUserByPhone(email);
+        }
         if (!user) {
-          return done(null, false, { message: "Invalid username or password" });
+          return done(null, false, { message: "No account found with that email or phone number" });
         }
 
-        // In a real app, you would compare hashed passwords
         if (user.password !== password) {
-          return done(null, false, { message: "Invalid username or password" });
+          return done(null, false, { message: "Incorrect password" });
         }
 
         return done(null, user);
@@ -96,74 +100,198 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   };
 
-  // Auth routes
+  // Helper to build safe user response
+  const safeUser = (user: any) => ({
+    id: user.id,
+    email: user.email,
+    phone: user.phone,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    gender: user.gender,
+    religion: user.religion,
+    aboutMe: user.aboutMe,
+    interests: user.interests,
+    location: user.location,
+    age: user.age,
+    isVerified: user.isVerified,
+    isEmailVerified: user.isEmailVerified,
+    isPhoneVerified: user.isPhoneVerified,
+    profilePicture: user.profilePicture,
+    profileVideo: user.profileVideo,
+    additionalPicture1: user.additionalPicture1,
+    additionalPicture2: user.additionalPicture2,
+    subscriptionTier: user.subscriptionTier,
+    subscriptionExpiry: user.subscriptionExpiry,
+    walletBalance: user.walletBalance,
+  });
+
+  // Auth routes — email-based registration
   app.post("/api/auth/register", async (req, res) => {
     try {
       const validatedData = registerSchema.parse(req.body);
 
-      // Check if username already exists
-      const existingUser = await storage.getUserByUsername(validatedData.username);
+      // Check if email already registered
+      const existingUser = await storage.getUserByEmail(validatedData.email);
       if (existingUser) {
-        return res.status(409).json({ message: "Username already exists" });
+        return res.status(409).json({ message: "An account with that email already exists. Please log in." });
       }
 
-      // In a real app, you would hash the password before storing it
+      // Derive a username from the email (part before @)
+      const baseUsername = validatedData.email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "").toLowerCase();
+      let username = baseUsername;
+      let counter = 1;
+      while (await storage.getUserByUsername(username)) {
+        username = `${baseUsername}${counter++}`;
+      }
+
       const newUser = await storage.createUser({
-        username: validatedData.username,
-        email: validatedData.email,
-        phone: validatedData.phone,
+        username,
+        email: validatedData.email.toLowerCase(),
         password: validatedData.password,
-        walletBalance: 0,
+        walletBalance: "0",
         isVerified: false,
-        emailVerified: false,
-        phoneVerified: false,
+        isEmailVerified: false,
+        isPhoneVerified: false,
       });
 
-      req.session.userId = newUser.id;
-
-      res.status(201).json({
-        id: newUser.id,
-        username: newUser.username,
-        isVerified: newUser.isVerified,
+      req.logIn(newUser, (err) => {
+        if (err) {
+          return res.status(500).json({ message: "Login after registration failed" });
+        }
+        return res.status(201).json(safeUser(newUser));
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors });
+        return res.status(400).json({ message: error.errors[0]?.message || "Validation error" });
+      }
+      console.error("Register error:", error);
+      res.status(500).json({ message: "Something went wrong. Please try again." });
+    }
+  });
+
+  // Phone-based registration
+  app.post("/api/auth/register-phone", async (req, res) => {
+    try {
+      const validatedData = phoneRegisterSchema.parse(req.body);
+
+      // Check if phone already registered
+      const existingUser = await storage.getUserByPhone(validatedData.phone);
+      if (existingUser) {
+        return res.status(409).json({ message: "An account with that phone number already exists. Please log in." });
+      }
+
+      // Derive a username from phone
+      const baseUsername = `user${validatedData.phone.replace(/\D/g, "").slice(-8)}`;
+      let username = baseUsername;
+      let counter = 1;
+      while (await storage.getUserByUsername(username)) {
+        username = `${baseUsername}${counter++}`;
+      }
+
+      const newUser = await storage.createUser({
+        username,
+        phone: validatedData.phone,
+        password: validatedData.password,
+        walletBalance: "0",
+        isVerified: false,
+        isEmailVerified: false,
+        isPhoneVerified: false,
+      });
+
+      req.logIn(newUser, (err) => {
+        if (err) {
+          return res.status(500).json({ message: "Login after registration failed" });
+        }
+        return res.status(201).json(safeUser(newUser));
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0]?.message || "Validation error" });
+      }
+      console.error("Register-phone error:", error);
+      res.status(500).json({ message: "Something went wrong. Please try again." });
+    }
+  });
+
+  // Send OTP (simulated — in production use Twilio/AWS SNS)
+  app.post("/api/auth/send-otp", async (req, res) => {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ message: "Phone number required" });
+    
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    req.session.phoneCode = otp;
+    req.session.pendingUserId = 0;
+    
+    // In production: send via Twilio. For now, return it in dev mode.
+    console.log(`[OTP for ${phone}]: ${otp}`);
+    res.json({ 
+      success: true, 
+      message: "OTP sent to your phone number",
+      // Only expose in development for testing:
+      ...(process.env.NODE_ENV !== "production" ? { otp } : {})
+    });
+  });
+
+  // Verify OTP for phone login
+  app.post("/api/auth/verify-otp", async (req, res) => {
+    const { phone, otp } = req.body;
+    if (!phone || !otp) return res.status(400).json({ message: "Phone and OTP required" });
+
+    if (req.session.phoneCode !== otp) {
+      return res.status(401).json({ message: "Invalid or expired OTP. Please try again." });
+    }
+
+    let user = await storage.getUserByPhone(phone);
+    if (!user) {
+      return res.status(404).json({ message: "No account found with that phone number", needsRegistration: true });
+    }
+
+    req.logIn(user, (err) => {
+      if (err) return res.status(500).json({ message: "Login failed" });
+      req.session.phoneCode = "";
+      return res.json(safeUser(user));
+    });
+  });
+
+  app.post("/api/auth/login", (req, res, next) => {
+    try {
+      loginSchema.parse(req.body);
+
+      passport.authenticate("local", (err: any, user: any, info: any) => {
+        if (err) return next(err);
+        if (!user) {
+          return res.status(401).json({ message: info?.message || "Invalid email or password" });
+        }
+        req.logIn(user, (err) => {
+          if (err) return next(err);
+          return res.json(safeUser(user));
+        });
+      })(req, res, next);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0]?.message || "Validation error" });
       }
       res.status(500).json({ message: "Something went wrong" });
     }
   });
 
-  app.post("/api/auth/login", (req, res, next) => {
+  // Phone-based login with password
+  app.post("/api/auth/login-phone", async (req, res) => {
     try {
-      const validatedData = loginSchema.parse(req.body);
+      const { phone, password } = req.body;
+      if (!phone || !password) return res.status(400).json({ message: "Phone and password required" });
 
-      passport.authenticate("local", (err: any, user: any, info: any) => {
-        if (err) {
-          return next(err);
-        }
-        if (!user) {
-          return res.status(401).json({ message: info.message });
-        }
-        req.logIn(user, (err) => {
-          if (err) {
-            return next(err);
-          }
-          return res.json({
-            id: user.id,
-            username: user.username,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            gender: user.gender,
-            isVerified: user.isVerified,
-            subscriptionTier: user.subscriptionTier,
-          });
-        });
-      })(req, res, next);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors });
+      const user = await storage.getUserByPhone(phone);
+      if (!user || user.password !== password) {
+        return res.status(401).json({ message: "Invalid phone number or password" });
       }
+
+      req.logIn(user, (err) => {
+        if (err) return res.status(500).json({ message: "Login failed" });
+        return res.json(safeUser(user));
+      });
+    } catch (error) {
       res.status(500).json({ message: "Something went wrong" });
     }
   });
@@ -179,29 +307,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!user) {
       return res.status(401).json({ message: "Not authenticated" });
     }
-
-    res.json({
-      id: user.id,
-      username: user.username,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      gender: user.gender,
-      religion: user.religion,
-      aboutMe: user.aboutMe,
-      interests: user.interests,
-      location: user.location,
-      age: user.age,
-      isVerified: user.isVerified,
-      profilePicture: user.profilePicture,
-      profileVideo: user.profileVideo,
-      additionalPicture1: user.additionalPicture1,
-      additionalPicture2: user.additionalPicture2,
-      subscriptionTier: user.subscriptionTier,
-      subscriptionExpiry: user.subscriptionExpiry,
-      walletBalance: user.walletBalance,
-      emailVerified: user.emailVerified,
-      phoneVerified: user.phoneVerified,
-    });
+    res.json(safeUser(user));
   });
 
   // Verification route

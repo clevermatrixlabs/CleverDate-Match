@@ -6,6 +6,8 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
+  email: text("email").unique(),
+  phone: text("phone").unique(),
   password: text("password").notNull(),
   firstName: text("first_name"),
   lastName: text("last_name"),
@@ -153,33 +155,44 @@ export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Social = typeof socials.$inferSelect;
 export type InsertSocial = z.infer<typeof insertSocialSchema>;
 
-// Auth related schemas
+// Auth related schemas — email-first, no username required
 export const loginSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
+  email: z.string().email("Please enter a valid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
+export const phoneLoginSchema = z.object({
+  phone: z.string().regex(/^\+?[1-9]\d{6,14}$/, "Please enter a valid phone number"),
+  otp: z.string().length(6, "OTP must be 6 digits"),
+});
+
 export const registerSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters").max(50, "Username cannot exceed 50 characters"),
-  email: z.string().email("Invalid email format").optional(),
-  phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number").optional(),
+  email: z.string().email("Please enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  confirmPassword: z.string()
+  confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
-  path: ["confirmPassword"]
-}).superRefine((data, ctx) => {
-  if (!data.email && !data.phone) {
-    ctx.addIssue({
-      code: "custom",
-      message: "Either email or phone number is required",
-      path: ["email"]
-    });
-  }
+  path: ["confirmPassword"],
+});
+
+export const phoneRegisterSchema = z.object({
+  phone: z.string().regex(/^\+?[1-9]\d{6,14}$/, "Please enter a valid phone number with country code"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
+export const otpSchema = z.object({
+  phone: z.string(),
+  otp: z.string().length(6, "OTP must be 6 digits"),
 });
 
 export type LoginForm = z.infer<typeof loginSchema>;
+export type PhoneLoginForm = z.infer<typeof phoneLoginSchema>;
 export type RegisterForm = z.infer<typeof registerSchema>;
+export type PhoneRegisterForm = z.infer<typeof phoneRegisterSchema>;
 
 // Profile schema
 export const profileSchema = z.object({

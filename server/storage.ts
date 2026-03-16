@@ -9,7 +9,7 @@ import {
 } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { db } from './supabase';
-import { setTimeout } from 'node:timers/promises';
+import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
 
 // Add retry functionality for database operations
 async function withRetry(operation, maxRetries = 5, delay = 1000) {
@@ -21,7 +21,7 @@ async function withRetry(operation, maxRetries = 5, delay = 1000) {
     } catch (error) {
       console.warn(`Operation failed (attempt ${attempt + 1}/${maxRetries}):`, error.message);
       lastError = error;
-      await setTimeout(delay * Math.pow(2, attempt));
+      await setTimeoutPromise(delay * Math.pow(2, attempt));
     }
   }
 
@@ -34,6 +34,8 @@ export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByPhone(phone: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, userData: Partial<User>): Promise<User>;
 
@@ -114,7 +116,15 @@ export class MemStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-  return Array.from(this.users.values()).find((user) => user.username === username);
+    return Array.from(this.users.values()).find((user) => user.username === username);
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find((user) => user.email?.toLowerCase() === email.toLowerCase());
+  }
+
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find((user) => user.phone === phone);
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
@@ -341,6 +351,18 @@ export class DrizzleStorage implements IStorage {
   async getUserByUsername(username: string): Promise<User | undefined> {
     if (!db) return undefined;
     const results = await withRetry(() => db.select().from(schema.users).where(eq(schema.users.username, username)).limit(1));
+    return results[0];
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    if (!db) return undefined;
+    const results = await withRetry(() => db.select().from(schema.users).where(eq(schema.users.email, email.toLowerCase())).limit(1));
+    return results[0];
+  }
+
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    if (!db) return undefined;
+    const results = await withRetry(() => db.select().from(schema.users).where(eq(schema.users.phone, phone)).limit(1));
     return results[0];
   }
 
@@ -582,7 +604,7 @@ export class DrizzleStorage implements IStorage {
       .select()
       .from(schema.transactions)
       .where(eq(schema.transactions.userId, userId))
-      .orderBy(desc(schema.transactions.createdAt));
+      .orderBy(desc(schema.transactions.createdAt)));
     return results;
   }
 

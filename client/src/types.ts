@@ -1,25 +1,27 @@
 // User Types
 export interface User {
   id: number;
-  username: string;
-  firstName: string;
-  lastName: string;
-  gender: 'male' | 'female';
+  username?: string;
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
+  gender?: 'male' | 'female';
   religion?: string;
   aboutMe?: string;
   interests?: string[];
   location?: string;
   age?: number;
   isVerified: boolean;
+  isEmailVerified?: boolean;
+  isPhoneVerified?: boolean;
   profilePicture?: string;
   profileVideo?: string;
   additionalPicture1?: string;
   additionalPicture2?: string;
   subscriptionTier?: 'none' | 'basic' | 'silver' | 'diamond' | 'gold';
   subscriptionExpiry?: string;
-  walletBalance: number;
-  createdAt: string;
-  updatedAt: string;
+  walletBalance?: number;
 }
 
 export interface InsertUser {
