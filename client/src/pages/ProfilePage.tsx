@@ -36,7 +36,7 @@ export default function ProfilePage() {
               {user.profilePicture ? (
                 <img 
                   src={user.profilePicture} 
-                  alt={`${user.firstName}'s profile`} 
+                  alt={`${user.firstName || 'User'}'s profile`} 
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -47,7 +47,7 @@ export default function ProfilePage() {
             </div>
             <div className="ml-4">
               <h2 className="font-poppins text-xl font-bold text-[#212529]">
-                {user.firstName}, {user.age || '?'}
+                {user.firstName || user.email?.split('@')[0] || 'User'}{user.age ? `, ${user.age}` : ''}
               </h2>
               <div className="flex items-center text-sm text-accent">
                 <i className="ri-verified-badge-fill mr-1"></i>

@@ -226,7 +226,7 @@ export default function ProfileCreationPage() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">Select your religion</SelectItem>
+                        <SelectItem value="none">Prefer not to say</SelectItem>
                         <SelectItem value="christianity">Christianity</SelectItem>
                         <SelectItem value="islam">Islam</SelectItem>
                         <SelectItem value="hinduism">Hinduism</SelectItem>

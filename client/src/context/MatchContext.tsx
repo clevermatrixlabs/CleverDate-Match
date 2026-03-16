@@ -55,19 +55,24 @@ export function MatchProvider({ children }: { children: ReactNode }) {
     enabled: !!user
   });
 
+  // Determine the other user's ID in the match
+  const otherUserId = currentMatch
+    ? (currentMatch.userId === user?.id ? currentMatch.matchedUserId : currentMatch.userId)
+    : null;
+
   // Fetch matched user details if we have a match
   const { 
     data: matchedUser,
     isLoading: isLoadingMatchedUser
   } = useQuery<User | null>({
-    queryKey: ['/api/users', currentMatch?.matchedUserId],
+    queryKey: ['/api/users', otherUserId],
     queryFn: async ({ queryKey }) => {
-      if (!currentMatch) return null;
-      const res = await fetch(`${queryKey[0]}/${queryKey[1]}`, { credentials: 'include' });
+      if (!otherUserId) return null;
+      const res = await fetch(`/api/users/${queryKey[1]}`, { credentials: 'include' });
       if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
       return res.json();
     },
-    enabled: !!currentMatch && !!currentMatch.matchedUserId
+    enabled: !!currentMatch && !!otherUserId
   });
 
   // Fetch messages for current match

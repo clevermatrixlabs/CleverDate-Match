@@ -4,26 +4,30 @@ import * as schema from "@shared/schema";
 
 export let db: ReturnType<typeof drizzle> | null = null;
 
-// Initialize the database connection
-(async () => {
-  console.log('Connecting to Supabase PostgreSQL database...');
+// Initialize the database connection — exported promise so storage.ts can await it
+export const dbReady: Promise<void> = (async () => {
+  if (!process.env.DATABASE_URL) {
+    console.warn('No DATABASE_URL found, using in-memory storage');
+    return;
+  }
 
   try {
-    // If there's a DATABASE_URL in the environment, use it
-    if (process.env.DATABASE_URL) {
-      const client = postgres(process.env.DATABASE_URL, {
-        max: 5, // Maximum number of connections
-        idle_timeout: 20, // Close connections after 20 seconds of inactivity
-        connect_timeout: 10, // Connection timeout of 10 seconds
-        max_lifetime: 60 * 30 // Connection lifetime of 30 minutes
-      });
+    console.log('Connecting to PostgreSQL database...');
+    const client = postgres(process.env.DATABASE_URL, {
+      max: 5,
+      idle_timeout: 20,
+      connect_timeout: 10,
+      max_lifetime: 60 * 30,
+    });
 
-      db = drizzle(client, { schema });
-      console.log('Successfully connected to Supabase PostgreSQL database');
-    } else {
-      console.warn('No DATABASE_URL found in environment, database features will be disabled');
-    }
-  } catch (error) {
-    console.error('Failed to connect to database:', error);
+    const candidate = drizzle(client, { schema });
+
+    // Test with a lightweight query to confirm the connection works
+    await candidate.execute('SELECT 1');
+    db = candidate;
+    console.log('Successfully connected to PostgreSQL database');
+  } catch (error: any) {
+    console.warn(`Database connection failed (${error.message}), falling back to in-memory storage`);
+    db = null;
   }
 })();

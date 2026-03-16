@@ -90,7 +90,7 @@ export default function MessagePage() {
             </div>
             
             <h2 className="font-poppins text-xl font-bold text-[#212529] text-center mb-2">Subscribe to Message</h2>
-            <p className="text-gray-600 text-center mb-6">You've matched with {matchedUser.firstName}! Subscribe to start chatting.</p>
+            <p className="text-gray-600 text-center mb-6">You've matched with {matchedUser.firstName || 'someone special'}! Subscribe to start chatting.</p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               {subscriptionPlans.map(plan => (

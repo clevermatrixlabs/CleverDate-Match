@@ -98,7 +98,7 @@ export default function WalletPage() {
       return;
     }
 
-    if ((user?.walletBalance || 0) < amount) {
+    if (parseFloat(String(user?.walletBalance || 0)) < amount) {
       toast({
         variant: "destructive",
         title: "Insufficient funds",
@@ -118,7 +118,7 @@ export default function WalletPage() {
           
           <div className="bg-gradient-to-r from-secondary to-primary rounded-xl p-6 mb-6 text-white">
             <p className="text-white/80 mb-1">Available Balance</p>
-            <h3 className="text-2xl font-bold mb-4">${user?.walletBalance?.toFixed(2) || '0.00'}</h3>
+            <h3 className="text-2xl font-bold mb-4">${parseFloat(String(user?.walletBalance || 0)).toFixed(2)}</h3>
             
             <div className="flex space-x-2">
               <Button 
@@ -130,8 +130,8 @@ export default function WalletPage() {
               </Button>
               <Button 
                 className="bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2 text-sm font-medium hover:bg-white/30 transition-colors"
-                onClick={() => withdrawMutation.mutate(user?.walletBalance || 0)}
-                disabled={withdrawMutation.isPending || (user?.walletBalance || 0) <= 0}
+                onClick={() => withdrawMutation.mutate(parseFloat(String(user?.walletBalance || 0)))}
+                disabled={withdrawMutation.isPending || parseFloat(String(user?.walletBalance || 0)) <= 0}
               >
                 Withdraw
               </Button>

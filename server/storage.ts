@@ -8,8 +8,10 @@ import {
   Social, InsertSocial
 } from "@shared/schema";
 import * as schema from "@shared/schema";
-import { db } from './supabase';
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
+
+// Module-level db reference — set by initStorage() after connection test
+let db: any = null;
 
 // Add retry functionality for database operations
 async function withRetry(operation, maxRetries = 5, delay = 1000) {
@@ -628,81 +630,36 @@ export class DrizzleStorage implements IStorage {
   }
 }
 
-// Choose the storage implementation based on database availability
-let storage: IStorage;
+// Start with in-memory storage — upgraded to DB storage after initStorage() completes
+export let storage: IStorage = new MemStorage();
 
-if (db) {
-  console.log("Using Supabase/PostgreSQL database for storage");
-  storage = new DrizzleStorage();
+export async function initStorage(): Promise<void> {
+  try {
+    const { dbReady } = await import('./supabase');
+    await dbReady;
+    // Re-import to get the updated db value after the promise resolves
+    const supabase = await import('./supabase');
+    if (supabase.db) {
+      db = supabase.db; // set module-level db for DrizzleStorage methods
+      console.log("Using PostgreSQL database for storage");
+      storage = new DrizzleStorage();
 
-  // Initialize socials if none exist - with improved error handling and retry mechanism
-(async () => {
-  let retries = 0;
-  const maxRetries = 5;
-  const retryDelay = 5000; // 5 seconds
-
-  const initializeSocials = async () => {
-    try {
-      console.log(`Attempt ${retries + 1}/${maxRetries} to initialize social media links...`);
-
-      const socials = await storage.getSocials();
-      if (socials.length === 0) {
-        try {
-          await storage.createSocial({
-            platform: "instagram",
-            url: "https://instagram.com/timcleverdate",
-            isActive: true
-          });
-
-          await storage.createSocial({
-            platform: "twitter",
-            url: "https://twitter.com/timcleverdate",
-            isActive: true
-          });
-
-          await storage.createSocial({
-            platform: "youtube",
-            url: "https://youtube.com/c/timcleverdate",
-            isActive: true
-          });
-
-          console.log("Social media links initialized successfully");
-          return true;
-        } catch (innerError) {
-          console.warn("Could not create social links:", innerError);
-          return false;
+      // Initialize default social links silently
+      try {
+        const socials = await storage.getSocials();
+        if (socials.length === 0) {
+          await storage.createSocial({ platform: "instagram", url: "https://instagram.com/timcleverdate", isActive: true });
+          await storage.createSocial({ platform: "twitter", url: "https://twitter.com/timcleverdate", isActive: true });
+          await storage.createSocial({ platform: "youtube", url: "https://youtube.com/c/timcleverdate", isActive: true });
+          console.log("Social media links initialized");
         }
-      } else {
-        console.log("Social media links already exist");
-        return true;
+      } catch (e) {
+        console.warn("Could not initialize social links:", e);
       }
-    } catch (error) {
-      console.error(`Error checking social links (attempt ${retries + 1}/${maxRetries}):`, error);
-      return false;
+    } else {
+      console.log("Using in-memory storage (no database connection)");
     }
-  };
-
-  // Initial delay before first attempt
-  await new Promise(resolve => setTimeout(resolve, 5000));
-
-  while (retries < maxRetries) {
-    const success = await initializeSocials();
-    if (success) break;
-
-    retries++;
-    if (retries < maxRetries) {
-      console.log(`Retrying in ${retryDelay/1000} seconds...`);
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-    }
+  } catch (e) {
+    console.warn("Storage initialization failed, using in-memory storage:", e);
   }
-
-  if (retries >= maxRetries) {
-    console.log("Maximum retry attempts reached for social initialization - app will continue");
-  }
-})();
-} else {
-  console.log("Using in-memory storage (no database connection)");
-  storage = new MemStorage();
 }
-
-export { storage };
