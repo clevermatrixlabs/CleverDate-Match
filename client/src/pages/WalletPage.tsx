@@ -17,8 +17,7 @@ export default function WalletPage() {
 
   const addFundsMutation = useMutation({
     mutationFn: async (amount: number) => {
-      const res = await apiRequest('POST', '/api/wallet/deposit', { amount });
-      return res.json();
+      return apiRequest('POST', '/wallet/deposit', { amount });
     },
     onSuccess: () => {
       toast({
@@ -38,8 +37,7 @@ export default function WalletPage() {
 
   const withdrawMutation = useMutation({
     mutationFn: async (amount: number) => {
-      const res = await apiRequest('POST', '/api/wallet/withdraw', { amount });
-      return res.json();
+      return apiRequest('POST', '/wallet/withdraw', { amount });
     },
     onSuccess: () => {
       toast({

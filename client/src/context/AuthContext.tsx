@@ -25,11 +25,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const { data: user, isLoading } = useQuery<User | null>({
     queryKey: ['/api/auth/me'],
-    queryFn: async ({ queryKey }) => {
+    queryFn: async () => {
       try {
-        const res = await fetch(queryKey[0] as string, { credentials: 'include' });
+        const res = await fetch('/api/auth/me', { credentials: 'include' });
         if (res.status === 401) return null;
-        if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+        if (!res.ok) return null;
         return await res.json();
       } catch {
         return null;
@@ -48,81 +48,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // apiRequest already throws on error and returns parsed JSON — no .ok or .json() needed
   const loginEmailMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      const res = await apiRequest('POST', '/api/auth/login', { email, password });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Login failed');
-      }
-      return res.json() as Promise<User>;
+      return apiRequest('POST', '/auth/login', { email, password }) as Promise<User>;
     },
     onSuccess: handleAuthSuccess,
   });
 
   const loginPhoneMutation = useMutation({
     mutationFn: async ({ phone, password }: { phone: string; password: string }) => {
-      const res = await apiRequest('POST', '/api/auth/login-phone', { phone, password });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Login failed');
-      }
-      return res.json() as Promise<User>;
+      return apiRequest('POST', '/auth/login-phone', { phone, password }) as Promise<User>;
     },
     onSuccess: handleAuthSuccess,
   });
 
   const registerEmailMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      const res = await apiRequest('POST', '/api/auth/register', { email, password, confirmPassword: password });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Registration failed');
-      }
-      return res.json() as Promise<User>;
+      return apiRequest('POST', '/auth/register', { email, password, confirmPassword: password }) as Promise<User>;
     },
     onSuccess: handleAuthSuccess,
   });
 
   const registerPhoneMutation = useMutation({
     mutationFn: async ({ phone, password }: { phone: string; password: string }) => {
-      const res = await apiRequest('POST', '/api/auth/register-phone', { phone, password, confirmPassword: password });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Registration failed');
-      }
-      return res.json() as Promise<User>;
+      return apiRequest('POST', '/auth/register-phone', { phone, password, confirmPassword: password }) as Promise<User>;
     },
     onSuccess: handleAuthSuccess,
   });
 
   const sendOtpMutation = useMutation({
     mutationFn: async (phone: string) => {
-      const res = await apiRequest('POST', '/api/auth/send-otp', { phone });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Failed to send OTP');
-      }
-      return res.json();
+      return apiRequest('POST', '/auth/send-otp', { phone }) as Promise<{ otp?: string }>;
     },
   });
 
   const verifyOtpMutation = useMutation({
     mutationFn: async ({ phone, otp }: { phone: string; otp: string }) => {
-      const res = await apiRequest('POST', '/api/auth/verify-otp', { phone, otp });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Invalid OTP');
-      }
-      return res.json() as Promise<User>;
+      return apiRequest('POST', '/auth/verify-otp', { phone, otp }) as Promise<User>;
     },
     onSuccess: handleAuthSuccess,
   });
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest('POST', '/api/auth/logout', {});
-      return res.json();
+      return apiRequest('POST', '/auth/logout', {});
     },
     onSuccess: () => {
       queryClient.setQueryData(['/api/auth/me'], null);
@@ -132,8 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateUserMutation = useMutation({
     mutationFn: async (userData: Partial<User>) => {
-      const res = await apiRequest('PATCH', '/api/users/me', userData);
-      return res.json();
+      return apiRequest('PATCH', '/users/me', userData) as Promise<User>;
     },
     onSuccess: (data) => {
       queryClient.setQueryData(['/api/auth/me'], data);

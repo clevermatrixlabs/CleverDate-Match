@@ -36,12 +36,7 @@ export default function VerificationPage() {
 
   const verificationMutation = useMutation({
     mutationFn: async (verificationData: string) => {
-      const res = await apiRequest('POST', '/api/verification', { verificationData });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Verification failed');
-      }
-      return res.json();
+      return apiRequest('POST', '/verification', { verificationData });
     },
     onSuccess: () => {
       toast({

@@ -13,8 +13,7 @@ export default function SubscriptionCard({ plan }: SubscriptionCardProps) {
 
   const subscribeMutation = useMutation({
     mutationFn: async (planId: string) => {
-      const res = await apiRequest('POST', '/api/subscription/subscribe', { planId });
-      return res.json();
+      return apiRequest('POST', '/subscription/subscribe', { planId });
     },
     onSuccess: () => {
       toast({
