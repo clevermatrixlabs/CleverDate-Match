@@ -57,8 +57,7 @@ export default function WalletPage() {
 
   const sendGiftMutation = useMutation({
     mutationFn: async ({ amount, recipientId }: { amount: number, recipientId: number }) => {
-      const res = await apiRequest('POST', '/api/wallet/gift', { amount, recipientId });
-      return res.json();
+      return apiRequest('POST', '/wallet/gift', { amount, recipientId });
     },
     onSuccess: () => {
       toast({

@@ -93,8 +93,7 @@ export function MatchProvider({ children }: { children: ReactNode }) {
   // Send like mutation
   const likeMutation = useMutation({
     mutationFn: async (userId: number) => {
-      const res = await apiRequest('POST', '/api/matches/like', { userId });
-      return res.json();
+      return apiRequest('POST', '/matches/like', { userId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/matches/potential'] });
@@ -105,8 +104,7 @@ export function MatchProvider({ children }: { children: ReactNode }) {
   // Send pass mutation
   const passMutation = useMutation({
     mutationFn: async (userId: number) => {
-      const res = await apiRequest('POST', '/api/matches/pass', { userId });
-      return res.json();
+      return apiRequest('POST', '/matches/pass', { userId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/matches/potential'] });
@@ -117,8 +115,7 @@ export function MatchProvider({ children }: { children: ReactNode }) {
   const messageMutation = useMutation({
     mutationFn: async (content: string) => {
       if (!currentMatch) throw new Error('No active match');
-      const res = await apiRequest('POST', `/api/messages/${currentMatch.id}`, { content });
-      return res.json();
+      return apiRequest('POST', `/messages/${currentMatch.id}`, { content });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/messages', currentMatch?.id] });
@@ -129,8 +126,7 @@ export function MatchProvider({ children }: { children: ReactNode }) {
   const unmatchMutation = useMutation({
     mutationFn: async () => {
       if (!currentMatch) throw new Error('No active match');
-      const res = await apiRequest('DELETE', `/api/matches/${currentMatch.id}`, {});
-      return res.json();
+      return apiRequest('DELETE', `/matches/${currentMatch.id}`, {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/matches/current'] });
