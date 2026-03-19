@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useMutation } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { queryClient } from '@/lib/queryClient';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -53,15 +53,18 @@ export default function ProfileCreationPage() {
         body: formData,
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Failed to create profile');
-      return res.json();
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || 'Failed to create profile');
+      return body;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
-        title: "Profile created",
-        description: "Your profile has been created successfully",
+        title: "Profile created!",
+        description: "Your profile has been created successfully.",
       });
-      navigate('/app');
+      // Refresh the user data so the app knows profile is complete
+      await queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
+      navigate('/verify');
     },
     onError: (error) => {
       toast({
@@ -233,7 +236,6 @@ export default function ProfileCreationPage() {
                         <SelectItem value="buddhism">Buddhism</SelectItem>
                         <SelectItem value="judaism">Judaism</SelectItem>
                         <SelectItem value="other">Other</SelectItem>
-                        <SelectItem value="none">None</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

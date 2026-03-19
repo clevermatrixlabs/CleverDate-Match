@@ -20,6 +20,10 @@ import {
 import { verify } from "./verification";
 import * as fs from "fs";
 import * as path from "path";
+import multer from "multer";
+
+// Multer — keep files in memory as Buffers, convert to base64 data URLs for storage
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 declare module "express-session" {
   interface SessionData {
@@ -421,40 +425,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Profile routes
-  app.post("/api/users/profile", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
+  // Profile routes — accepts multipart/form-data with optional photo/video files
+  app.post(
+    "/api/users/profile",
+    requireAuth,
+    upload.fields([
+      { name: "primaryPhoto", maxCount: 1 },
+      { name: "profileVideo", maxCount: 1 },
+      { name: "additionalPhoto", maxCount: 1 },
+    ]),
+    async (req: any, res) => {
+      try {
+        const user = req.user as any;
 
-      // Parse form data
-      const validatedData = profileSchema.parse({
-        ...req.body,
-        age: parseInt(req.body.age, 10),
-      });
+        // Validate text fields — age comes as a string from FormData
+        const validatedData = profileSchema.parse({
+          ...req.body,
+          age: req.body.age ? parseInt(req.body.age, 10) : undefined,
+        });
 
-      // Handle file uploads (in a real app)
-      // For this implementation, we'll assume the files are URLs
-      const profilePicture = req.body.primaryPhoto || null;
-      const profileVideo = req.body.profileVideo || null;
-      const additionalPicture1 = req.body.additionalPhoto || null;
+        // Convert uploaded files to base64 data URLs for in-memory storage
+        const files = req.files as { [fieldname: string]: Express.Multer.File[] } || {};
 
-      // Update user profile
-      await storage.updateUser(user.id, {
-        ...validatedData,
-        profilePicture,
-        profileVideo,
-        additionalPicture1,
-      });
+        const toDataUrl = (file?: Express.Multer.File) => {
+          if (!file) return null;
+          return `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+        };
 
-      res.json({ success: true });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors });
+        const profilePicture = toDataUrl(files.primaryPhoto?.[0]);
+        const profileVideo = toDataUrl(files.profileVideo?.[0]);
+        const additionalPicture1 = toDataUrl(files.additionalPhoto?.[0]);
+
+        await storage.updateUser(user.id, {
+          ...validatedData,
+          ...(profilePicture && { profilePicture }),
+          ...(profileVideo && { profileVideo }),
+          ...(additionalPicture1 && { additionalPicture1 }),
+        });
+
+        res.json({ success: true });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          const msg = error.errors[0]?.message || "Validation error";
+          return res.status(400).json({ message: msg });
+        }
+        console.error("Profile error:", error);
+        res.status(500).json({ message: "Failed to update profile" });
       }
-      console.error("Profile error:", error);
-      res.status(500).json({ message: "Failed to update profile" });
     }
-  });
+  );
 
   app.patch("/api/users/me", requireAuth, async (req, res) => {
     try {
