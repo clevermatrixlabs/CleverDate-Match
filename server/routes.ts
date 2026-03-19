@@ -20,7 +20,6 @@ import {
 import { verify } from "./verification";
 import * as fs from "fs";
 import * as path from "path";
-import { db } from "./supabase";
 
 declare module "express-session" {
   interface SessionData {

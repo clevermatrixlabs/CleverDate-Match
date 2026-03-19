@@ -191,7 +191,7 @@ export default function OnboardingPage() {
             {/* Google / Gmail button */}
             <button
               className="w-full h-14 flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 bg-white hover:bg-gray-50 transition-colors shadow-sm"
-              onClick={() => { setScreen('email-login'); emailLoginForm.setValue('email', ''); }}
+              onClick={() => setScreen(isLogin ? 'email-login' : 'email-signup')}
             >
               <SiGoogle className="w-5 h-5 text-red-500" />
               <span className="font-semibold text-gray-700">

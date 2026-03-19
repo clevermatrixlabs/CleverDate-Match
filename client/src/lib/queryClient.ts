@@ -1,104 +1,35 @@
-import { createClient } from '@supabase/supabase-js';
 import { QueryClient } from '@tanstack/react-query';
 
-// Create a client
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: 3,
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      cacheTime: 1000 * 60 * 30, // 30 minutes
-      retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
-      onError: (error) => {
-        console.error('Query error:', error);
-      },
+      retry: 1,
+      staleTime: 1000 * 60 * 5,
     },
     mutations: {
-      retry: 2,
-      retryDelay: 1000,
-      onError: (error) => {
-        console.error('Mutation error:', error);
-      },
+      retry: 0,
     },
   },
 });
 
-// Create the Supabase client with proper environment variable handling
-let supabaseUrl = '';
-let supabaseKey = '';
-
-// Safely access env variables to prevent "process is not defined" errors
-try {
-  supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
-} catch (e) {
-  console.warn('Failed to load environment variables, using fallback');
-  // Fallback values if needed
-  if (!supabaseUrl) supabaseUrl = 'https://kdyuewasapwyvfricivy.supabase.co';
-}
-
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
-
-// API request helper function with improved error handling
+// Core API request helper — all calls go through Express, not Supabase directly
 export const apiRequest = async (method: string, endpoint: string, data?: any) => {
-  try {
-    const response = await fetch(`/api${endpoint}`, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: data ? JSON.stringify(data) : undefined,
-      credentials: 'include',
-    });
+  const response = await fetch(`/api${endpoint}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: data !== undefined ? JSON.stringify(data) : undefined,
+    credentials: 'include',
+  });
 
-    // Handle non-JSON responses gracefully
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      const jsonResponse = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(jsonResponse.message || 'API request failed');
-      }
-      
-      return jsonResponse;
-    } else {
-      const textResponse = await response.text();
-      
-      if (!response.ok) {
-        throw new Error(textResponse || 'API request failed');
-      }
-      
-      return { message: textResponse };
-    }
-  } catch (error) {
-    console.error('API request error:', error);
-    throw error;
+  const contentType = response.headers.get('content-type');
+  const isJson = contentType?.includes('application/json');
+  const body = isJson ? await response.json() : await response.text();
+
+  if (!response.ok) {
+    const message = isJson ? (body as any).message : body;
+    throw new Error(message || `Request failed (${response.status})`);
   }
-};
 
-// Query functions
-export const verifyEmailCode = async (code: string) => {
-  return apiRequest('POST', '/verify/email', { code });
-};
-
-export const verifyPhoneCode = async (code: string) => {
-  return apiRequest('POST', '/verify/phone', { code });
-};
-
-export const login = async (credentials: any) => {
-  return apiRequest('POST', '/auth/login', credentials);
-};
-
-export const signup = async (userData: any) => {
-  return apiRequest('POST', '/auth/signup', userData);
-};
-
-export const getCurrentUser = async () => {
-  return apiRequest('GET', '/auth/me');
+  return body;
 };
