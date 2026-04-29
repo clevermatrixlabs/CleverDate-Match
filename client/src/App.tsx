@@ -28,16 +28,17 @@ function Router() {
       <Route path="/" component={OnboardingPage} />
       <Route path="/verify" component={VerificationPage} />
       <Route path="/create-profile" component={ProfileCreationPage} />
-      <Route path="/app" component={() => (
+      <Route path="/app" nest>
         <Layout>
           <Switch>
-            <Route path="/app/" component={MatchPage} />
-            <Route path="/app/messages" component={MessagePage} />
-            <Route path="/app/wallet" component={WalletPage} />
-            <Route path="/app/profile" component={ProfilePage} />
+            <Route path="/" component={MatchPage} />
+            <Route path="/messages" component={MessagePage} />
+            <Route path="/wallet" component={WalletPage} />
+            <Route path="/profile" component={ProfilePage} />
+            <Route component={MatchPage} />
           </Switch>
         </Layout>
-      )} />
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
