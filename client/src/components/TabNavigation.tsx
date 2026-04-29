@@ -18,12 +18,14 @@ export default function TabNavigation() {
         {tabs.map((tab) => {
           const isActive = location === tab.match || (tab.match === '/' && location === '');
           return (
-            <Link key={tab.href} href={tab.href}>
-              <a className={`py-4 flex flex-col items-center relative ${isActive ? 'text-primary' : 'text-gray-400'}`}>
-                {isActive && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-1 bg-primary rounded-b-md"></div>}
-                <i className={`${isActive ? tab.iconActive : tab.iconIdle} text-2xl`}></i>
-                <span className="text-xs font-medium mt-1">{tab.label}</span>
-              </a>
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className={`py-4 flex flex-col items-center relative ${isActive ? 'text-primary' : 'text-gray-400'}`}
+            >
+              {isActive && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-1 bg-primary rounded-b-md"></div>}
+              <i className={`${isActive ? tab.iconActive : tab.iconIdle} text-2xl`}></i>
+              <span className="text-xs font-medium mt-1">{tab.label}</span>
             </Link>
           );
         })}
