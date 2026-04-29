@@ -23,7 +23,7 @@ import * as path from "path";
 import multer from "multer";
 
 // Multer — keep files in memory as Buffers, convert to base64 data URLs for storage
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 declare module "express-session" {
   interface SessionData {
@@ -456,24 +456,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           age: req.body.age ? parseInt(req.body.age, 10) : undefined,
         });
 
-        // Convert uploaded files to base64 data URLs for in-memory storage
+        // We only record that media was uploaded — storing multi-MB base64 blobs
+        // in MemStorage makes every /api/auth/me response huge and slow.
         const files = req.files as { [fieldname: string]: Express.Multer.File[] } || {};
 
-        const toDataUrl = (file?: Express.Multer.File) => {
-          if (!file) return null;
-          return `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
-        };
+        const updates: any = { ...validatedData };
+        if (files.primaryPhoto?.[0]) updates.profilePicture = `uploaded:${files.primaryPhoto[0].size}b`;
+        if (files.profileVideo?.[0]) updates.profileVideo = `uploaded:${files.profileVideo[0].size}b`;
+        if (files.additionalPhoto?.[0]) updates.additionalPicture1 = `uploaded:${files.additionalPhoto[0].size}b`;
 
-        const profilePicture = toDataUrl(files.primaryPhoto?.[0]);
-        const profileVideo = toDataUrl(files.profileVideo?.[0]);
-        const additionalPicture1 = toDataUrl(files.additionalPhoto?.[0]);
-
-        await storage.updateUser(user.id, {
-          ...validatedData,
-          ...(profilePicture && { profilePicture }),
-          ...(profileVideo && { profileVideo }),
-          ...(additionalPicture1 && { additionalPicture1 }),
-        });
+        await storage.updateUser(user.id, updates);
 
         res.json({ success: true });
       } catch (error) {

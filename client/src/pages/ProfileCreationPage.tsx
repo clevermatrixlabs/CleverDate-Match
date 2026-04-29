@@ -96,19 +96,29 @@ export default function ProfileCreationPage() {
       return;
     }
 
-    if (!profileVideo) {
-      toast({
-        variant: "destructive",
-        title: "Profile video required",
-        description: "Please upload a profile video for verification",
-      });
+    // Profile video is optional — the mandatory face scan happens on the next step.
+
+    // Validate file sizes upfront to avoid long uploads that fail server-side.
+    const MAX = 5 * 1024 * 1024; // 5 MB
+    if (primaryPhoto.size > MAX) {
+      toast({ variant: 'destructive', title: 'Photo too large', description: 'Please choose a photo under 5 MB.' });
+      return;
+    }
+    if (profileVideo && profileVideo.size > MAX) {
+      toast({ variant: 'destructive', title: 'Video too large', description: 'Please choose a video under 5 MB or skip it.' });
+      return;
+    }
+    if (additionalPhoto && additionalPhoto.size > MAX) {
+      toast({ variant: 'destructive', title: 'Photo too large', description: 'Additional photo must be under 5 MB.' });
       return;
     }
 
     // Create FormData to send files
     const formData = new FormData();
     formData.append('primaryPhoto', primaryPhoto);
-    formData.append('profileVideo', profileVideo);
+    if (profileVideo) {
+      formData.append('profileVideo', profileVideo);
+    }
     if (additionalPhoto) {
       formData.append('additionalPhoto', additionalPhoto);
     }
@@ -303,7 +313,7 @@ export default function ProfileCreationPage() {
                     ) : (
                       <>
                         <i className="ri-video-add-line text-xl text-gray-400"></i>
-                        <span className="text-xs text-gray-500 mt-1">Video*</span>
+                        <span className="text-xs text-gray-500 mt-1">Video</span>
                       </>
                     )}
                     <input 
@@ -342,7 +352,7 @@ export default function ProfileCreationPage() {
                 </div>
                 
                 <p className="text-xs text-gray-500">
-                  * Required items. Your primary photo and a short video help verify you're real.
+                  * Primary photo is required (under 5 MB). Video and extra photo are optional — the live face scan on the next step is the actual verification.
                 </p>
               </div>
               
