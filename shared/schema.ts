@@ -30,6 +30,9 @@ export const users = pgTable("users", {
   subscriptionTier: text("subscription_tier", { enum: ["none", "basic", "silver", "diamond", "gold"] }).default("none"),
   subscriptionExpiry: timestamp("subscription_expiry"),
   walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).default("0"),
+  isAdmin: boolean("is_admin").default(false),
+  isSuspended: boolean("is_suspended").default(false),
+  suspendedReason: text("suspended_reason"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

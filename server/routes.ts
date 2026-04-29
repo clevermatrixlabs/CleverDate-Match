@@ -75,6 +75,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return done(null, false, { message: "Incorrect password" });
         }
 
+        if ((user as any).isSuspended) {
+          return done(null, false, { message: "This account has been suspended. Please contact support." });
+        }
+
         return done(null, user);
       } catch (err) {
         return done(err);
@@ -128,7 +132,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     subscriptionTier: user.subscriptionTier,
     subscriptionExpiry: user.subscriptionExpiry,
     walletBalance: user.walletBalance,
+    isAdmin: !!user.isAdmin,
+    isSuspended: !!user.isSuspended,
   });
+
+  // Auto-promote the configured ADMIN_EMAIL to admin (idempotent, safe to call repeatedly).
+  const ensureAdminFlag = async (user: any) => {
+    const adminEmail = (process.env.ADMIN_EMAIL || "").toLowerCase().trim();
+    if (!adminEmail) return user;
+    if (user?.email?.toLowerCase() === adminEmail && !user.isAdmin) {
+      try {
+        const updated = await storage.updateUser(user.id, { isAdmin: true } as any);
+        return updated || user;
+      } catch (e) {
+        console.warn("Failed to auto-promote admin:", (e as any)?.message);
+      }
+    }
+    return user;
+  };
+
+  // Admin middleware
+  const requireAdmin = async (req: any, res: any, next: any) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const user = await ensureAdminFlag(req.user);
+    if (!user?.isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+    req.user = user;
+    next();
+  };
 
   // Auth routes — email-based registration
   app.post("/api/auth/register", async (req, res) => {
@@ -990,6 +1024,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Create social error:", error);
       res.status(500).json({ message: "Failed to create social media link" });
+    }
+  });
+
+  // ============================================================
+  // Admin / owner routes
+  // ============================================================
+
+  // Dashboard summary stats
+  app.get("/api/admin/stats", requireAdmin, async (_req, res) => {
+    try {
+      const [users, verified, suspended, subscribed, matches, messages] = await Promise.all([
+        storage.countUsers(),
+        storage.countVerifiedUsers(),
+        storage.countSuspendedUsers(),
+        storage.countSubscribedUsers(),
+        storage.countMatches(),
+        storage.countMessages(),
+      ]);
+      res.json({ users, verified, suspended, subscribed, matches, messages });
+    } catch (e: any) {
+      console.error("Admin stats error:", e);
+      res.status(500).json({ message: "Failed to load stats" });
+    }
+  });
+
+  // List all users (admin)
+  app.get("/api/admin/users", requireAdmin, async (_req, res) => {
+    try {
+      const users = await storage.listUsers();
+      // Strip large media + password before sending
+      const slim = users.map(u => ({
+        id: u.id,
+        email: u.email,
+        phone: u.phone,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        gender: u.gender,
+        country: u.country,
+        age: u.age,
+        isVerified: u.isVerified,
+        isAdmin: (u as any).isAdmin || false,
+        isSuspended: (u as any).isSuspended || false,
+        suspendedReason: (u as any).suspendedReason || null,
+        subscriptionTier: u.subscriptionTier,
+        walletBalance: u.walletBalance,
+        createdAt: u.createdAt,
+      }));
+      res.json(slim);
+    } catch (e: any) {
+      console.error("Admin list users error:", e);
+      res.status(500).json({ message: "Failed to load users" });
+    }
+  });
+
+  // Suspend / unsuspend a user
+  app.post("/api/admin/users/:id/suspend", requireAdmin, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const { reason } = req.body || {};
+      if (id === req.user.id) {
+        return res.status(400).json({ message: "You cannot suspend your own account." });
+      }
+      const updated = await storage.updateUser(id, { isSuspended: true, suspendedReason: reason || "Suspended by admin" } as any);
+      res.json({ success: true, user: { id: updated.id, isSuspended: (updated as any).isSuspended } });
+    } catch (e: any) {
+      console.error("Suspend user error:", e);
+      res.status(500).json({ message: "Failed to suspend user" });
+    }
+  });
+
+  app.post("/api/admin/users/:id/unsuspend", requireAdmin, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const updated = await storage.updateUser(id, { isSuspended: false, suspendedReason: null } as any);
+      res.json({ success: true, user: { id: updated.id, isSuspended: (updated as any).isSuspended } });
+    } catch (e: any) {
+      console.error("Unsuspend user error:", e);
+      res.status(500).json({ message: "Failed to unsuspend user" });
+    }
+  });
+
+  // Manually verify a user (override AI)
+  app.post("/api/admin/users/:id/verify", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const updated = await storage.updateUser(id, { isVerified: true } as any);
+      res.json({ success: true, user: { id: updated.id, isVerified: updated.isVerified } });
+    } catch (e: any) {
+      console.error("Admin verify user error:", e);
+      res.status(500).json({ message: "Failed to verify user" });
     }
   });
 

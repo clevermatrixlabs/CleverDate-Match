@@ -40,6 +40,14 @@ export interface IStorage {
   getUserByPhone(phone: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, userData: Partial<User>): Promise<User>;
+  // Admin helpers
+  listUsers(): Promise<User[]>;
+  countUsers(): Promise<number>;
+  countVerifiedUsers(): Promise<number>;
+  countSuspendedUsers(): Promise<number>;
+  countSubscribedUsers(): Promise<number>;
+  countMatches(): Promise<number>;
+  countMessages(): Promise<number>;
 
   // Verification methods
   createVerification(verification: InsertVerification): Promise<Verification>;
@@ -157,6 +165,25 @@ export class MemStorage implements IStorage {
     return updatedUser;
   }
 
+  // Admin helpers
+  async listUsers(): Promise<User[]> {
+    return Array.from(this.users.values()).sort((a, b) =>
+      new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()
+    );
+  }
+  async countUsers(): Promise<number> { return this.users.size; }
+  async countVerifiedUsers(): Promise<number> {
+    return Array.from(this.users.values()).filter(u => u.isVerified).length;
+  }
+  async countSuspendedUsers(): Promise<number> {
+    return Array.from(this.users.values()).filter(u => (u as any).isSuspended).length;
+  }
+  async countSubscribedUsers(): Promise<number> {
+    return Array.from(this.users.values()).filter(u => u.subscriptionTier && u.subscriptionTier !== "none").length;
+  }
+  async countMatches(): Promise<number> { return this.matches.size; }
+  async countMessages(): Promise<number> { return this.messages.size; }
+
   // Verification methods
   async createVerification(verification: InsertVerification): Promise<Verification> {
     const id = this.currentVerificationId++;
@@ -247,11 +274,13 @@ export class MemStorage implements IStorage {
       }
     }
 
-    // Find potential matches
+    // Find potential matches — exclude admins, suspended, unverified, and already-seen users
     return Array.from(this.users.values()).filter(u => 
       u.id !== userId &&
       u.gender === oppositeGender &&
       u.isVerified === true &&
+      !(u as any).isAdmin &&
+      !(u as any).isSuspended &&
       !interactedUserIds.has(u.id)
     );
   }
@@ -392,6 +421,42 @@ export class DrizzleStorage implements IStorage {
     return results[0];
   }
 
+  // Admin helpers
+  async listUsers(): Promise<User[]> {
+    if (!db) return [];
+    return await withRetry(() => db.select().from(schema.users).orderBy(desc(schema.users.createdAt)));
+  }
+  async countUsers(): Promise<number> {
+    if (!db) return 0;
+    const r = await withRetry(() => db.select({ c: sql<number>`count(*)::int` }).from(schema.users));
+    return r[0]?.c ?? 0;
+  }
+  async countVerifiedUsers(): Promise<number> {
+    if (!db) return 0;
+    const r = await withRetry(() => db.select({ c: sql<number>`count(*)::int` }).from(schema.users).where(eq(schema.users.isVerified, true)));
+    return r[0]?.c ?? 0;
+  }
+  async countSuspendedUsers(): Promise<number> {
+    if (!db) return 0;
+    const r = await withRetry(() => db.select({ c: sql<number>`count(*)::int` }).from(schema.users).where(eq(schema.users.isSuspended, true)));
+    return r[0]?.c ?? 0;
+  }
+  async countSubscribedUsers(): Promise<number> {
+    if (!db) return 0;
+    const r = await withRetry(() => db.select({ c: sql<number>`count(*)::int` }).from(schema.users).where(not(eq(schema.users.subscriptionTier, "none"))));
+    return r[0]?.c ?? 0;
+  }
+  async countMatches(): Promise<number> {
+    if (!db) return 0;
+    const r = await withRetry(() => db.select({ c: sql<number>`count(*)::int` }).from(schema.matches));
+    return r[0]?.c ?? 0;
+  }
+  async countMessages(): Promise<number> {
+    if (!db) return 0;
+    const r = await withRetry(() => db.select({ c: sql<number>`count(*)::int` }).from(schema.messages));
+    return r[0]?.c ?? 0;
+  }
+
   // Verification methods
   async createVerification(verification: InsertVerification): Promise<Verification> {
     if (!db) throw new Error("Database not available");
@@ -513,7 +578,7 @@ export class DrizzleStorage implements IStorage {
       match.userId === userId ? match.matchedUserId : match.userId
     );
 
-    // Now find potential matches
+    // Now find potential matches — exclude admins and suspended users
     const results = await withRetry(() => db
       .select()
       .from(schema.users)
@@ -521,6 +586,8 @@ export class DrizzleStorage implements IStorage {
         and(
           eq(schema.users.gender, oppositeGender),
           eq(schema.users.isVerified, true),
+          eq(schema.users.isAdmin, false),
+          eq(schema.users.isSuspended, false),
           not(sql`${schema.users.id} = ANY(${JSON.stringify(interactedUserIds)})`)
         )
       )

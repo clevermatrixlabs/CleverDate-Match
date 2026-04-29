@@ -13,6 +13,7 @@ import MatchPage from "@/pages/MatchPage";
 import MessagePage from "@/pages/MessagePage";
 import WalletPage from "@/pages/WalletPage";
 import ProfilePage from "@/pages/ProfilePage";
+import AdminDashboardPage from "@/pages/AdminDashboardPage";
 import { AuthProvider } from "@/context/AuthContext";
 import { MatchProvider } from "@/context/MatchContext";
 import { AppLoading } from "@/components/AppLoading";
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/" component={OnboardingPage} />
       <Route path="/verify" component={VerificationPage} />
       <Route path="/create-profile" component={ProfileCreationPage} />
+      <Route path="/admin" component={AdminDashboardPage} />
       <Route path="/app" nest>
         <Layout>
           <Switch>
