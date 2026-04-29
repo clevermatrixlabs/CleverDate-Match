@@ -16,6 +16,9 @@ export const users = pgTable("users", {
   aboutMe: text("about_me"),
   interests: json("interests").$type<string[]>(),
   location: text("location"),
+  country: text("country"),
+  nationalIdType: text("national_id_type"),
+  nationalIdNumber: text("national_id_number"),
   age: integer("age"),
   isVerified: boolean("is_verified").default(false),
   isEmailVerified: boolean("is_email_verified").default(false),
@@ -170,6 +173,7 @@ export const registerSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   confirmPassword: z.string(),
+  country: z.string().min(2, "Please select your country"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -179,6 +183,7 @@ export const phoneRegisterSchema = z.object({
   phone: z.string().regex(/^\+?[1-9]\d{6,14}$/, "Please enter a valid phone number with country code"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   confirmPassword: z.string(),
+  country: z.string().min(2, "Please select your country"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],

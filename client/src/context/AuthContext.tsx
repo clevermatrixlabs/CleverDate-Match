@@ -10,8 +10,8 @@ interface AuthContextType {
   isLoading: boolean;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   loginWithPhone: (phone: string, password: string) => Promise<void>;
-  registerWithEmail: (email: string, password: string) => Promise<void>;
-  registerWithPhone: (phone: string, password: string) => Promise<void>;
+  registerWithEmail: (email: string, password: string, country: string) => Promise<void>;
+  registerWithPhone: (phone: string, password: string, country: string) => Promise<void>;
   sendOtp: (phone: string) => Promise<{ otp?: string }>;
   verifyOtp: (phone: string, otp: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -64,15 +64,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const registerEmailMutation = useMutation({
-    mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      return apiRequest('POST', '/auth/register', { email, password, confirmPassword: password }) as Promise<User>;
+    mutationFn: async ({ email, password, country }: { email: string; password: string; country: string }) => {
+      return apiRequest('POST', '/auth/register', { email, password, confirmPassword: password, country }) as Promise<User>;
     },
     onSuccess: handleAuthSuccess,
   });
 
   const registerPhoneMutation = useMutation({
-    mutationFn: async ({ phone, password }: { phone: string; password: string }) => {
-      return apiRequest('POST', '/auth/register-phone', { phone, password, confirmPassword: password }) as Promise<User>;
+    mutationFn: async ({ phone, password, country }: { phone: string; password: string; country: string }) => {
+      return apiRequest('POST', '/auth/register-phone', { phone, password, confirmPassword: password, country }) as Promise<User>;
     },
     onSuccess: handleAuthSuccess,
   });
@@ -121,11 +121,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginWithPhone: async (phone, password) => {
           await loginPhoneMutation.mutateAsync({ phone, password });
         },
-        registerWithEmail: async (email, password) => {
-          await registerEmailMutation.mutateAsync({ email, password });
+        registerWithEmail: async (email, password, country) => {
+          await registerEmailMutation.mutateAsync({ email, password, country });
         },
-        registerWithPhone: async (phone, password) => {
-          await registerPhoneMutation.mutateAsync({ phone, password });
+        registerWithPhone: async (phone, password, country) => {
+          await registerPhoneMutation.mutateAsync({ phone, password, country });
         },
         sendOtp: async (phone) => {
           return sendOtpMutation.mutateAsync(phone);

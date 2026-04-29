@@ -7,8 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Mail, Phone, Eye, EyeOff, ArrowLeft, Heart, ShieldCheck, Star, ChevronRight } from 'lucide-react';
+import { Mail, Phone, Eye, EyeOff, ArrowLeft, Heart, ShieldCheck, Star, ChevronRight, Globe } from 'lucide-react';
 import { SiGoogle } from 'react-icons/si';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { COUNTRIES } from '@/lib/countries';
 
 type Screen = 'welcome' | 'choose-method' | 'email-login' | 'email-signup' | 'phone-login' | 'phone-signup' | 'otp';
 
@@ -21,6 +23,7 @@ const emailSignupSchema = z.object({
   email: z.string().email('Please enter a valid Gmail or email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   confirmPassword: z.string(),
+  country: z.string().min(2, 'Please select your country'),
 }).refine(d => d.password === d.confirmPassword, {
   message: "Passwords don't match",
   path: ['confirmPassword'],
@@ -30,6 +33,7 @@ const phoneSchema = z.object({
   phone: z.string().regex(/^\+?[1-9]\d{6,14}$/, 'Enter phone with country code e.g. +1234567890'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   confirmPassword: z.string(),
+  country: z.string().min(2, 'Please select your country'),
 }).refine(d => d.password === d.confirmPassword, {
   message: "Passwords don't match",
   path: ['confirmPassword'],
@@ -56,8 +60,8 @@ export default function OnboardingPage() {
   const { toast } = useToast();
 
   const emailLoginForm = useForm({ resolver: zodResolver(emailLoginSchema), defaultValues: { email: '', password: '' } });
-  const emailSignupForm = useForm({ resolver: zodResolver(emailSignupSchema), defaultValues: { email: '', password: '', confirmPassword: '' } });
-  const phoneForm = useForm({ resolver: zodResolver(phoneSchema), defaultValues: { phone: '', password: '', confirmPassword: '' } });
+  const emailSignupForm = useForm({ resolver: zodResolver(emailSignupSchema), defaultValues: { email: '', password: '', confirmPassword: '', country: '' } });
+  const phoneForm = useForm({ resolver: zodResolver(phoneSchema), defaultValues: { phone: '', password: '', confirmPassword: '', country: '' } });
   const phoneLoginForm = useForm({ resolver: zodResolver(phoneLoginSchema), defaultValues: { phone: '', password: '' } });
   const otpForm = useForm({ resolver: zodResolver(otpSchema), defaultValues: { otp: '' } });
 
@@ -71,7 +75,7 @@ export default function OnboardingPage() {
 
   const handleEmailSignup = async (data: z.infer<typeof emailSignupSchema>) => {
     try {
-      await registerWithEmail(data.email, data.password);
+      await registerWithEmail(data.email, data.password, data.country);
       toast({ title: 'Account created!', description: 'Welcome to Tim Clever Date.' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Registration failed', description: e.message });
@@ -80,7 +84,7 @@ export default function OnboardingPage() {
 
   const handlePhoneSignup = async (data: z.infer<typeof phoneSchema>) => {
     try {
-      await registerWithPhone(data.phone, data.password);
+      await registerWithPhone(data.phone, data.password, data.country);
       toast({ title: 'Account created!', description: 'Welcome to Tim Clever Date.' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Registration failed', description: e.message });
@@ -340,6 +344,27 @@ export default function OnboardingPage() {
                     <FormMessage />
                   </FormItem>
                 )} />
+                <FormField control={emailSignupForm.control} name="country" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Country</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger className="h-12 rounded-xl">
+                          <div className="flex items-center gap-2">
+                            <Globe className="w-4 h-4 text-gray-400" />
+                            <SelectValue placeholder="Select your country" />
+                          </div>
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent className="max-h-72">
+                        {COUNTRIES.map(c => (
+                          <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <p className="text-xs text-gray-400 text-center">
                   By signing up, you agree to our Terms of Service and Privacy Policy.
                 </p>
@@ -458,6 +483,27 @@ export default function OnboardingPage() {
                         </button>
                       </div>
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={phoneForm.control} name="country" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Country</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger className="h-12 rounded-xl">
+                          <div className="flex items-center gap-2">
+                            <Globe className="w-4 h-4 text-gray-400" />
+                            <SelectValue placeholder="Select your country" />
+                          </div>
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent className="max-h-72">
+                        {COUNTRIES.map(c => (
+                          <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )} />

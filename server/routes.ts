@@ -115,6 +115,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     aboutMe: user.aboutMe,
     interests: user.interests,
     location: user.location,
+    country: user.country,
+    nationalIdType: user.nationalIdType,
     age: user.age,
     isVerified: user.isVerified,
     isEmailVerified: user.isEmailVerified,
@@ -151,6 +153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         username,
         email: validatedData.email.toLowerCase(),
         password: validatedData.password,
+        country: validatedData.country,
         walletBalance: "0",
         isVerified: false,
         isEmailVerified: false,
@@ -195,6 +198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         username,
         phone: validatedData.phone,
         password: validatedData.password,
+        country: validatedData.country,
         walletBalance: "0",
         isVerified: false,
         isEmailVerified: false,
@@ -317,10 +321,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/verification", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { verificationData } = req.body;
+      const { verificationData, nationalId, nationalIdType } = req.body;
 
       if (!verificationData) {
         return res.status(400).json({ message: "Verification data is required" });
+      }
+
+      if (!nationalId || String(nationalId).trim().length < 4) {
+        return res.status(400).json({ message: "National ID is required" });
       }
 
       // In a real app, this would call the AI verification service
@@ -348,8 +356,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.session.phoneCode = phoneCode;
         req.session.pendingUserId = user.id;
 
-        // Update user verification status
-        await storage.updateUser(user.id, { isVerified: true });
+        // Update user verification status & store national ID
+        await storage.updateUser(user.id, {
+          isVerified: true,
+          nationalIdNumber: String(nationalId).trim(),
+          nationalIdType: nationalIdType || "National ID",
+        });
 
         return res.json({ success: true, message: "Verification successful" });
       } else {
