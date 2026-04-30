@@ -20,6 +20,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import multer from "multer";
+import { sendVerificationCode, isEmailConfigured } from "./email";
 
 // Multer — keep files in memory as Buffers, convert to base64 data URLs for storage
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -28,10 +29,15 @@ declare module "express-session" {
   interface SessionData {
     userId: number;
     emailCode: string;
+    emailCodeExpiresAt: number;
     phoneCode: string;
+    phoneCodeExpiresAt: number;
     pendingUserId: number;
   }
 }
+
+const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit numeric
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Parse JSON and URL-encoded bodies
@@ -426,12 +432,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         approvedAt: new Date().toISOString(),
       });
 
-      const emailCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const phoneCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      console.log(`Email verification code: ${emailCode}`);
-      console.log(`Phone verification code: ${phoneCode}`);
+      const emailCode = generateCode();
+      const phoneCode = generateCode();
       req.session.emailCode = emailCode;
+      req.session.emailCodeExpiresAt = Date.now() + CODE_TTL_MS;
       req.session.phoneCode = phoneCode;
+      req.session.phoneCodeExpiresAt = Date.now() + CODE_TTL_MS;
       req.session.pendingUserId = user.id;
 
       await storage.updateUser(user.id, {
@@ -441,10 +447,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         faceDescriptor: selfieDescriptor,
       } as any);
 
+      // Send the email code asynchronously — don't block the response
+      let emailSent = false;
+      if (user.email) {
+        const result = await sendVerificationCode(user.email, emailCode, user.firstName);
+        emailSent = result.sent;
+        if (!result.sent) console.warn(`[verify] Email code for ${user.email}: ${emailCode} (delivery failed: ${result.reason})`);
+      } else {
+        console.log(`[verify] No email on user, code: ${emailCode}`);
+      }
+      // Phone code: still log until SMS is wired up
+      console.log(`[verify] Phone code for user #${user.id}: ${phoneCode}`);
+
       return res.json({
         success: true,
         message: "Verification successful",
         matchDistance: Number(distance.toFixed(3)),
+        emailSent,
       });
     } catch (error: any) {
       console.error("Verification error:", error);
@@ -455,23 +474,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Email verification endpoint
   app.post("/api/verify/email", requireAuth, async (req, res) => {
     try {
+      const user = req.user as any;
       const { code } = req.body;
-      const { emailCode, pendingUserId } = req.session;
+      const { emailCode, emailCodeExpiresAt } = req.session;
 
-      if (!code) {
-        return res.status(400).json({ message: "Verification code is required" });
+      if (!code) return res.status(400).json({ message: "Verification code is required" });
+      if (!emailCode) return res.status(400).json({ message: "No code on file. Please request a new code." });
+      if (emailCodeExpiresAt && Date.now() > emailCodeExpiresAt) {
+        return res.status(400).json({ message: "Code expired. Please request a new code." });
       }
-
-      if (code !== emailCode) {
+      if (String(code).trim() !== emailCode) {
         return res.status(400).json({ message: "Invalid verification code" });
       }
 
-      // Update user's email verification status
-      await storage.updateUser(pendingUserId, { emailVerified: true });
+      await storage.updateUser(user.id, { isEmailVerified: true });
 
-      // Clear session variables
       delete req.session.emailCode;
-      delete req.session.pendingUserId;
+      delete req.session.emailCodeExpiresAt;
 
       res.json({ success: true, message: "Email verified successfully" });
     } catch (error) {
@@ -480,26 +499,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Resend email verification code
+  app.post("/api/verify/email/resend", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user.email) return res.status(400).json({ message: "No email on file" });
+
+      const code = generateCode();
+      req.session.emailCode = code;
+      req.session.emailCodeExpiresAt = Date.now() + CODE_TTL_MS;
+
+      const result = await sendVerificationCode(user.email, code, user.firstName);
+      if (!result.sent) {
+        if (!isEmailConfigured()) {
+          console.log(`[verify] Email code (not sent — gmail not configured): ${code}`);
+          return res.json({ success: true, sent: false, message: "Email not configured. Code logged to server console." });
+        }
+        return res.status(502).json({ message: `Could not send email: ${result.reason}` });
+      }
+      res.json({ success: true, sent: true, message: "A new code has been emailed to you." });
+    } catch (error: any) {
+      console.error("Resend email code error:", error);
+      res.status(500).json({ message: "Could not resend code" });
+    }
+  });
+
   // Phone verification endpoint
   app.post("/api/verify/phone", requireAuth, async (req, res) => {
     try {
+      const user = req.user as any;
       const { code } = req.body;
-      const { phoneCode, pendingUserId } = req.session;
+      const { phoneCode, phoneCodeExpiresAt } = req.session;
 
-      if (!code) {
-        return res.status(400).json({ message: "Verification code is required" });
+      if (!code) return res.status(400).json({ message: "Verification code is required" });
+      if (!phoneCode) return res.status(400).json({ message: "No code on file. Please request a new code." });
+      if (phoneCodeExpiresAt && Date.now() > phoneCodeExpiresAt) {
+        return res.status(400).json({ message: "Code expired. Please request a new code." });
       }
-
-      if (code !== phoneCode) {
+      if (String(code).trim() !== phoneCode) {
         return res.status(400).json({ message: "Invalid verification code" });
       }
 
-      // Update user's phone verification status
-      await storage.updateUser(pendingUserId, { phoneVerified: true });
+      await storage.updateUser(user.id, { isPhoneVerified: true });
 
-      // Clear session variables
       delete req.session.phoneCode;
-      delete req.session.pendingUserId;
+      delete req.session.phoneCodeExpiresAt;
 
       res.json({ success: true, message: "Phone verified successfully" });
     } catch (error) {
