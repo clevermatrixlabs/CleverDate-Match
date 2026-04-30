@@ -17,7 +17,6 @@ import {
   insertTransactionSchema,
   insertVerificationSchema
 } from "../shared/schema";
-import { verify } from "./verification";
 import * as fs from "fs";
 import * as path from "path";
 import multer from "multer";
@@ -351,67 +350,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(safeUser(user));
   });
 
-  // Verification route
+  // Verification route — real on-device face match + duplicate detection
   app.post("/api/verification", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { verificationData, nationalId, nationalIdType } = req.body;
+      const {
+        selfieDescriptor,
+        idDescriptor,
+        verificationData,
+        idImage,
+        nationalId,
+        nationalIdType,
+      } = req.body;
 
-      if (!verificationData) {
-        return res.status(400).json({ message: "Verification data is required" });
+      const isDescriptor = (d: any) =>
+        Array.isArray(d) && d.length === 128 && d.every((n) => typeof n === "number" && Number.isFinite(n));
+
+      if (!isDescriptor(selfieDescriptor)) {
+        return res.status(400).json({ message: "Live face scan was not completed. Please retry the face scan." });
       }
-
+      if (!isDescriptor(idDescriptor)) {
+        return res.status(400).json({ message: "We couldn't detect a face on your ID document. Please upload a clearer photo." });
+      }
       if (!nationalId || String(nationalId).trim().length < 4) {
-        return res.status(400).json({ message: "National ID is required" });
+        return res.status(400).json({ message: "National ID is required." });
       }
 
-      // In a real app, this would call the AI verification service
-      const verificationResult = await verify(verificationData);
+      // Euclidean distance between selfie and ID face
+      const FACE_MATCH_THRESHOLD = 0.6; // face-api.js standard
+      const distance = Math.sqrt(
+        selfieDescriptor.reduce((s: number, v: number, i: number) => s + (v - idDescriptor[i]) ** 2, 0),
+      );
 
-      if (verificationResult.success) {
-        // Create verification record
-        await storage.createVerification({
-          userId: user.id,
-          status: "approved",
-          verificationData,
-          approvedAt: new Date().toISOString(),
-        });
-
-        // Generate and send verification codes
-        const emailCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const phoneCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-
-        // In a real app, send these codes via email and SMS
-        console.log(`Email verification code: ${emailCode}`);
-        console.log(`Phone verification code: ${phoneCode}`);
-
-        // Store codes in session
-        req.session.emailCode = emailCode;
-        req.session.phoneCode = phoneCode;
-        req.session.pendingUserId = user.id;
-
-        // Update user verification status & store national ID
-        await storage.updateUser(user.id, {
-          isVerified: true,
-          nationalIdNumber: String(nationalId).trim(),
-          nationalIdType: nationalIdType || "National ID",
-        });
-
-        return res.json({ success: true, message: "Verification successful" });
-      } else {
-        // Create verification record with rejected status
+      if (distance > FACE_MATCH_THRESHOLD) {
         await storage.createVerification({
           userId: user.id,
           status: "rejected",
-          verificationData,
-          rejectedReason: verificationResult.message,
+          verificationData: verificationData || null,
+          rejectedReason: `Face on ID does not match selfie (distance=${distance.toFixed(3)})`,
         });
-
-        return res.status(400).json({ success: false, message: verificationResult.message });
+        return res.status(400).json({
+          message: "The face in your selfie doesn't match the face on your ID. Please try again with a clearer ID photo.",
+        });
       }
-    } catch (error) {
+
+      // Duplicate-account check: reject if another verified user has a near-identical face
+      const DUP_THRESHOLD = 0.45;
+      const allUsers = await storage.listUsers();
+      for (const other of allUsers) {
+        if (other.id === user.id) continue;
+        if (!other.isVerified) continue;
+        const otherDesc: any = (other as any).faceDescriptor;
+        if (!Array.isArray(otherDesc) || otherDesc.length !== 128) continue;
+        const dDup = Math.sqrt(
+          selfieDescriptor.reduce((s: number, v: number, i: number) => s + (v - Number(otherDesc[i])) ** 2, 0),
+        );
+        if (dDup < DUP_THRESHOLD) {
+          await storage.createVerification({
+            userId: user.id,
+            status: "rejected",
+            verificationData: verificationData || null,
+            rejectedReason: `Duplicate face detected — already verified as user #${other.id}`,
+          });
+          return res.status(400).json({
+            message: "This face is already registered to another account. Each person may only have one account on Tim Clever Date.",
+          });
+        }
+      }
+
+      // Approved
+      await storage.createVerification({
+        userId: user.id,
+        status: "approved",
+        verificationData: verificationData || null,
+        approvedAt: new Date().toISOString(),
+      });
+
+      const emailCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const phoneCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      console.log(`Email verification code: ${emailCode}`);
+      console.log(`Phone verification code: ${phoneCode}`);
+      req.session.emailCode = emailCode;
+      req.session.phoneCode = phoneCode;
+      req.session.pendingUserId = user.id;
+
+      await storage.updateUser(user.id, {
+        isVerified: true,
+        nationalIdNumber: String(nationalId).trim(),
+        nationalIdType: nationalIdType || "National ID",
+        faceDescriptor: selfieDescriptor,
+      } as any);
+
+      return res.json({
+        success: true,
+        message: "Verification successful",
+        matchDistance: Number(distance.toFixed(3)),
+      });
+    } catch (error: any) {
       console.error("Verification error:", error);
-      res.status(500).json({ message: "Verification failed" });
+      res.status(500).json({ message: "Verification failed: " + (error?.message || "unknown error") });
     }
   });
 

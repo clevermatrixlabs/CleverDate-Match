@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, decimal, json } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, decimal, json, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -33,6 +33,7 @@ export const users = pgTable("users", {
   isAdmin: boolean("is_admin").default(false),
   isSuspended: boolean("is_suspended").default(false),
   suspendedReason: text("suspended_reason"),
+  faceDescriptor: real("face_descriptor").array(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
