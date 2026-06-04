@@ -641,23 +641,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
 
-      // Get potential matches
-      const potentialMatches = await storage.getPotentialMatches(user.id, user.gender);
+      // Get potential matches (opposite gender, verified, not interacted)
+      let potentialMatches = await storage.getPotentialMatches(user.id, user.gender);
 
-      // Use AI to find optimal matches based on compatibility
-      try {
-        const { findOptimalMatches } = await import('./ai');
-        // Get optimized matches using AI
-        const optimizedMatches = await findOptimalMatches(user, potentialMatches, 10);
-        res.json(optimizedMatches);
-      } catch (aiError) {
-        console.error("Error using AI matching:", aiError);
-        // Fallback to regular matches if AI fails
-        res.json(potentialMatches);
+      // Filter by age preferences
+      const minAge = user.minAgePreference ?? 18;
+      const maxAge = user.maxAgePreference ?? 100;
+      potentialMatches = potentialMatches.filter(
+        (m) => !m.age || (m.age >= minAge && m.age <= maxAge)
+      );
+
+      // Filter by preferred countries if set
+      if (user.preferredCountries && user.preferredCountries.length > 0) {
+        const preferred = potentialMatches.filter(
+          (m) => m.country && user.preferredCountries.includes(m.country)
+        );
+        // Fall back to all matches if no one matches the country filter
+        if (preferred.length > 0) potentialMatches = preferred;
       }
+
+      // Score and rank using compatibility algorithm
+      const { findOptimalMatches } = await import('./ai');
+      const ranked = await findOptimalMatches(user, potentialMatches, 10);
+      res.json(ranked);
     } catch (error) {
       console.error("Get potential matches error:", error);
       res.status(500).json({ message: "Failed to get potential matches" });
+    }
+  });
+
+  // Save matching preferences
+  app.patch("/api/matches/preferences", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { minAgePreference, maxAgePreference, preferredCountries, preferredReligion } = req.body;
+
+      const updates: any = {};
+      if (minAgePreference !== undefined) updates.minAgePreference = minAgePreference;
+      if (maxAgePreference !== undefined) updates.maxAgePreference = maxAgePreference;
+      if (preferredCountries !== undefined) updates.preferredCountries = preferredCountries;
+      if (preferredReligion !== undefined) updates.preferredReligion = preferredReligion;
+
+      await storage.updateUser(user.id, updates);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Save preferences error:", error);
+      res.status(500).json({ message: "Failed to save preferences" });
     }
   });
 

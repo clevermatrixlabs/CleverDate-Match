@@ -1,0 +1,1 @@
+- [DB push command](db-push.md) — must use PG* env vars override, not DATABASE_URL (points to dead Supabase host)

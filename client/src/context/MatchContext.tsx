@@ -1,12 +1,12 @@
-import { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import { createContext, useContext, ReactNode } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { queryClient } from '@/lib/queryClient';
-import { User, Match, Message } from '@/types';
+import { MatchCandidate, Match, Message, User } from '@/types';
 import { useAuth } from './AuthContext';
 
 interface MatchContextType {
-  potentialMatches: User[];
+  potentialMatches: MatchCandidate[];
   currentMatch: Match | null;
   matchedUser: User | null;
   messages: Message[];
@@ -23,31 +23,29 @@ const MatchContext = createContext<MatchContextType | undefined>(undefined);
 
 export function MatchProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  
-  // Fetch potential matches
-  const { 
+
+  const {
     data: potentialMatches = [],
     isLoading: isLoadingMatches
-  } = useQuery<User[]>({
+  } = useQuery<MatchCandidate[]>({
     queryKey: ['/api/matches/potential'],
     queryFn: async ({ queryKey }) => {
       if (!user) return [];
-      const res = await fetch(queryKey[0], { credentials: 'include' });
+      const res = await fetch(queryKey[0] as string, { credentials: 'include' });
       if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
       return res.json();
     },
     enabled: !!user
   });
 
-  // Fetch current match
-  const { 
+  const {
     data: currentMatch,
     isLoading: isLoadingCurrentMatch
   } = useQuery<Match | null>({
     queryKey: ['/api/matches/current'],
     queryFn: async ({ queryKey }) => {
       if (!user) return null;
-      const res = await fetch(queryKey[0], { credentials: 'include' });
+      const res = await fetch(queryKey[0] as string, { credentials: 'include' });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
       return res.json();
@@ -55,13 +53,11 @@ export function MatchProvider({ children }: { children: ReactNode }) {
     enabled: !!user
   });
 
-  // Determine the other user's ID in the match
   const otherUserId = currentMatch
     ? (currentMatch.userId === user?.id ? currentMatch.matchedUserId : currentMatch.userId)
     : null;
 
-  // Fetch matched user details if we have a match
-  const { 
+  const {
     data: matchedUser,
     isLoading: isLoadingMatchedUser
   } = useQuery<User | null>({
@@ -75,8 +71,7 @@ export function MatchProvider({ children }: { children: ReactNode }) {
     enabled: !!currentMatch && !!otherUserId
   });
 
-  // Fetch messages for current match
-  const { 
+  const {
     data: messages = [],
     isLoading: isLoadingMessages
   } = useQuery<Message[]>({
@@ -90,7 +85,6 @@ export function MatchProvider({ children }: { children: ReactNode }) {
     enabled: !!currentMatch
   });
 
-  // Send like mutation
   const likeMutation = useMutation({
     mutationFn: async (userId: number) => {
       return apiRequest('POST', '/matches/like', { userId });
@@ -101,7 +95,6 @@ export function MatchProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  // Send pass mutation
   const passMutation = useMutation({
     mutationFn: async (userId: number) => {
       return apiRequest('POST', '/matches/pass', { userId });
@@ -111,7 +104,6 @@ export function MatchProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  // Send message mutation
   const messageMutation = useMutation({
     mutationFn: async (content: string) => {
       if (!currentMatch) throw new Error('No active match');
@@ -122,7 +114,6 @@ export function MatchProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  // Unmatch mutation
   const unmatchMutation = useMutation({
     mutationFn: async () => {
       if (!currentMatch) throw new Error('No active match');
@@ -157,7 +148,7 @@ export function MatchProvider({ children }: { children: ReactNode }) {
       value={{
         potentialMatches,
         currentMatch,
-        matchedUser,
+        matchedUser: matchedUser ?? null,
         messages,
         isLoadingMatches: isLoadingMatches || isLoadingCurrentMatch || isLoadingMatchedUser,
         isLoadingMessages,

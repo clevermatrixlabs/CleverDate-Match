@@ -34,6 +34,10 @@ export const users = pgTable("users", {
   isSuspended: boolean("is_suspended").default(false),
   suspendedReason: text("suspended_reason"),
   faceDescriptor: real("face_descriptor").array(),
+  minAgePreference: integer("min_age_preference").default(18),
+  maxAgePreference: integer("max_age_preference").default(60),
+  preferredCountries: text("preferred_countries").array(),
+  preferredReligion: text("preferred_religion"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

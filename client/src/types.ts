@@ -11,6 +11,7 @@ export interface User {
   aboutMe?: string;
   interests?: string[];
   location?: string;
+  country?: string;
   age?: number;
   isVerified: boolean;
   isEmailVerified?: boolean;
@@ -22,6 +23,16 @@ export interface User {
   subscriptionTier?: 'none' | 'basic' | 'silver' | 'diamond' | 'gold';
   subscriptionExpiry?: string;
   walletBalance?: number;
+  minAgePreference?: number;
+  maxAgePreference?: number;
+  preferredCountries?: string[];
+  preferredReligion?: string;
+}
+
+export interface MatchCandidate extends User {
+  compatibilityScore: number;
+  compatibilityReason: string;
+  sharedInterests: string[];
 }
 
 export interface InsertUser {

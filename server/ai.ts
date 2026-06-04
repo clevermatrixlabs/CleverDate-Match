@@ -170,94 +170,98 @@ ${conversation.join('\n')}`,
   }
 }
 
+export type MatchCandidate = User & {
+  compatibilityScore: number;
+  compatibilityReason: string;
+  sharedInterests: string[];
+};
+
+function scoreCompatibility(
+  currentUser: User,
+  candidate: User
+): { score: number; reason: string; sharedInterests: string[] } {
+  let score = 0;
+  const reasons: string[] = [];
+
+  // Interests overlap — up to 35 pts
+  const userInterests = (currentUser.interests || []).map((i) => i.toLowerCase().trim());
+  const candidateInterests = (candidate.interests || []).map((i) => i.toLowerCase().trim());
+  const shared = userInterests.filter((i) => candidateInterests.includes(i));
+  const maxInterests = Math.max(userInterests.length, candidateInterests.length, 1);
+  const interestScore = userInterests.length === 0 && candidateInterests.length === 0
+    ? 12
+    : Math.round((shared.length / maxInterests) * 35);
+  score += interestScore;
+  if (shared.length > 0) {
+    reasons.push(`Both enjoy ${shared.slice(0, 3).join(', ')}`);
+  }
+
+  // Age proximity — up to 25 pts
+  if (currentUser.age && candidate.age) {
+    const ageDiff = Math.abs(currentUser.age - candidate.age);
+    const ageScore = Math.max(0, Math.round(25 - ageDiff * 2.5));
+    score += ageScore;
+    if (ageDiff === 0) reasons.push('Same age');
+    else if (ageDiff <= 2) reasons.push('Very close in age');
+    else if (ageDiff <= 5) reasons.push('Similar life stage');
+  } else {
+    score += 10;
+  }
+
+  // Same country — 20 pts
+  if (currentUser.country && candidate.country && currentUser.country === candidate.country) {
+    score += 20;
+    reasons.push(`Both from ${currentUser.country}`);
+  }
+
+  // Same religion — 15 pts
+  if (
+    currentUser.religion && candidate.religion &&
+    currentUser.religion.toLowerCase() === candidate.religion.toLowerCase()
+  ) {
+    score += 15;
+    reasons.push(`Shared faith: ${currentUser.religion}`);
+  }
+
+  // Profile completeness — 5 pts
+  if (candidate.profilePicture && candidate.aboutMe) {
+    score += 5;
+  }
+
+  const reason =
+    reasons.length > 0
+      ? reasons.join(' · ')
+      : 'Verified profile with great potential';
+
+  return { score: Math.min(score, 100), reason, sharedInterests: shared };
+}
+
 /**
- * Analyze user profiles to find good potential matches based on interests, values, and compatibility
- * @param currentUser The user seeking matches
- * @param potentialMatches Available potential matches
- * @param count Number of matches to return
+ * Score and rank potential matches for a user using multi-factor compatibility algorithm.
+ * No OpenAI call needed — scoring is deterministic and instant.
  */
 export async function findOptimalMatches(
-  currentUser: User, 
-  potentialMatches: User[], 
-  count: number = 5
-): Promise<User[]> {
-  try {
-    if (!potentialMatches.length) return [];
-    
-    // Create a detailed profile of the current user
-    const userProfile = {
-      age: currentUser.age,
-      gender: currentUser.gender,
-      interests: currentUser.interests || [],
-      aboutMe: currentUser.aboutMe || "",
-      religion: currentUser.religion || "",
-      location: currentUser.location || ""
+  currentUser: User,
+  potentialMatches: User[],
+  count: number = 10
+): Promise<MatchCandidate[]> {
+  if (!potentialMatches.length) return [];
+
+  const scored = potentialMatches.map((candidate) => {
+    const { score, reason, sharedInterests } = scoreCompatibility(currentUser, candidate);
+    return {
+      ...candidate,
+      compatibilityScore: score,
+      compatibilityReason: reason,
+      sharedInterests,
+      _rawScore: score,
     };
-    
-    // Create profiles for potential matches
-    const matchProfiles = potentialMatches.map(match => ({
-      id: match.id,
-      age: match.age,
-      interests: match.interests || [],
-      aboutMe: match.aboutMe || "",
-      religion: match.religion || "",
-      location: match.location || ""
-    }));
-    
-    // Use OpenAI to analyze compatibility
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "You are a dating app matchmaking algorithm. Based on user profiles, identify the most compatible matches. Consider shared interests, values, communication style, and potential chemistry."
-        },
-        {
-          role: "user",
-          content: `Find the top ${count} most compatible matches for this user based on their profiles. 
-          
-          Current user profile:
-          ${JSON.stringify(userProfile, null, 2)}
-          
-          Potential matches:
-          ${JSON.stringify(matchProfiles, null, 2)}
-          
-          Return ONLY a JSON array with the IDs of the best matches in order of compatibility, like: [3, 8, 12, 4, 7]`
-        }
-      ],
-      response_format: { type: "json_object" }
-    });
-    
-    const result = JSON.parse(response.choices[0].message.content);
-    const bestMatchIds = result.matches || [];
-    
-    // Return the full user objects in the order of compatibility
-    const orderedMatches = bestMatchIds
-      .map(id => potentialMatches.find(match => match.id === id))
-      .filter(Boolean)
-      .slice(0, count);
-    
-    // If we don't have enough matches from AI, add some random ones
-    if (orderedMatches.length < count) {
-      const remainingMatches = potentialMatches.filter(
-        match => !orderedMatches.some(m => m.id === match.id)
-      );
-      
-      // Shuffle remaining matches and add until we reach the count
-      const shuffled = remainingMatches.sort(() => 0.5 - Math.random());
-      while (orderedMatches.length < count && shuffled.length) {
-        orderedMatches.push(shuffled.pop());
-      }
-    }
-    
-    return orderedMatches;
-  } catch (error) {
-    console.error("Error finding optimal matches:", error);
-    // Fallback to random selection if AI fails
-    return potentialMatches
-      .sort(() => 0.5 - Math.random())
-      .slice(0, count);
-  }
+  });
+
+  return scored
+    .sort((a, b) => b._rawScore - a._rawScore)
+    .slice(0, count)
+    .map(({ _rawScore, ...rest }) => rest as MatchCandidate);
 }
 
 /**
