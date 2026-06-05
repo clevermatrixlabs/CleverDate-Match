@@ -19,6 +19,9 @@ const profileSchema = z.object({
   firstName: z.string().min(2, 'First name is required'),
   lastName: z.string().min(2, 'Last name is required'),
   gender: z.enum(['male', 'female']),
+  intention: z.enum(['marriage', 'long-term', 'getting-to-know'], {
+    required_error: 'Please tell us what you are looking for',
+  }),
   religion: z.string().optional(),
   aboutMe: z.string().min(10, 'Tell us a bit more about yourself').max(300, 'Bio is too long'),
   age: z.number().min(18, 'You must be at least 18 years old').max(100, 'Age is invalid')
@@ -40,6 +43,7 @@ export default function ProfileCreationPage() {
       firstName: '',
       lastName: '',
       gender: 'male',
+      intention: undefined as any,
       religion: '',
       aboutMe: '',
       age: 18
@@ -220,6 +224,77 @@ export default function ProfileCreationPage() {
                       >
                         Female
                       </Button>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="intention"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="block text-sm font-medium text-gray-700 mb-1">
+                      What are you looking for? <span className="text-red-500">*</span>
+                    </FormLabel>
+                    <p className="text-xs text-gray-500 mb-3">This helps us match you with people who want the same thing. Be honest.</p>
+                    <div className="space-y-3">
+                      {[
+                        {
+                          value: 'marriage',
+                          emoji: '💍',
+                          title: 'Marriage',
+                          desc: "I'm ready to find my life partner. I want something real and lasting.",
+                          activeBg: 'bg-rose-50 border-rose-400 ring-1 ring-rose-300',
+                          activeText: 'text-rose-800',
+                        },
+                        {
+                          value: 'long-term',
+                          emoji: '💛',
+                          title: 'Long-term relationship',
+                          desc: 'I want to build a deep, meaningful relationship with the right person.',
+                          activeBg: 'bg-amber-50 border-amber-400 ring-1 ring-amber-300',
+                          activeText: 'text-amber-800',
+                        },
+                        {
+                          value: 'getting-to-know',
+                          emoji: '🌱',
+                          title: 'Getting to know someone',
+                          desc: 'I want to connect with someone special and see where it goes naturally.',
+                          activeBg: 'bg-green-50 border-green-400 ring-1 ring-green-300',
+                          activeText: 'text-green-800',
+                        },
+                      ].map((option) => {
+                        const isSelected = field.value === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => field.onChange(option.value)}
+                            className={`w-full text-left flex items-start gap-3 px-4 py-3.5 rounded-xl border-2 transition-all ${
+                              isSelected
+                                ? option.activeBg
+                                : 'bg-white border-gray-200 hover:border-gray-300'
+                            }`}
+                          >
+                            <span className="text-2xl mt-0.5 shrink-0">{option.emoji}</span>
+                            <div>
+                              <p className={`font-semibold text-sm ${isSelected ? option.activeText : 'text-gray-800'}`}>
+                                {option.title}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-0.5 leading-snug">{option.desc}</p>
+                            </div>
+                            {isSelected && (
+                              <span className="ml-auto shrink-0 mt-0.5">
+                                <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                     <FormMessage />
                   </FormItem>

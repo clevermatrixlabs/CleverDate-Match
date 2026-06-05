@@ -643,10 +643,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!u.lastName) missing.push("Last name");
     if (!u.age || u.age < 18) missing.push("Age");
     if (!u.gender) missing.push("Gender");
+    if (!u.intention) missing.push("What you're looking for (intention)");
     if (!u.profilePicture) missing.push("Profile photo");
     if (!u.aboutMe || u.aboutMe.trim().length < 10) missing.push("Bio (at least 10 characters)");
     if (!u.interests || (u.interests as string[]).length === 0) missing.push("At least one interest");
     return missing;
+  }
+
+  // Returns true if two intentions are compatible for matching
+  function intentionsCompatible(a: string | null, b: string | null): boolean {
+    if (!a || !b) return true;
+    if (a === b) return true;
+    // marriage ↔ long-term (both serious)
+    if ((a === "marriage" && b === "long-term") || (a === "long-term" && b === "marriage")) return true;
+    // long-term ↔ getting-to-know (open-minded)
+    if ((a === "long-term" && b === "getting-to-know") || (a === "getting-to-know" && b === "long-term")) return true;
+    // marriage ↔ getting-to-know → NEVER compatible
+    return false;
   }
 
   // Match routes
@@ -681,6 +694,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const mMissing = getProfileMissingFields(m);
         return mMissing.length === 0;
       });
+
+      // Filter by compatible intentions — incompatible pairs are never shown
+      potentialMatches = potentialMatches.filter((m) =>
+        intentionsCompatible(user.intention ?? null, m.intention ?? null)
+      );
 
       // Filter by age preferences
       const minAge = user.minAgePreference ?? 18;

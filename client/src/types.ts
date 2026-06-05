@@ -23,6 +23,7 @@ export interface User {
   subscriptionTier?: 'none' | 'basic' | 'silver' | 'diamond' | 'gold';
   subscriptionExpiry?: string;
   walletBalance?: number;
+  intention?: 'marriage' | 'long-term' | 'getting-to-know';
   minAgePreference?: number;
   maxAgePreference?: number;
   preferredCountries?: string[];

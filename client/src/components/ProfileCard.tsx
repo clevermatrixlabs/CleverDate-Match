@@ -59,6 +59,20 @@ export default function ProfileCard({ user, onLike, onPass }: ProfileCardProps) 
 
       {/* Card body */}
       <div className="p-5 space-y-4">
+        {/* Intention badge */}
+        {user.intention && (
+          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+            user.intention === 'marriage'
+              ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
+              : user.intention === 'long-term'
+              ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+              : 'bg-green-50 text-green-700 ring-1 ring-green-200'
+          }`}>
+            {user.intention === 'marriage' ? '💍' : user.intention === 'long-term' ? '💛' : '🌱'}
+            {user.intention === 'marriage' ? 'Looking for marriage' : user.intention === 'long-term' ? 'Long-term relationship' : 'Getting to know someone'}
+          </div>
+        )}
+
         {/* Connection reason */}
         {reason && (
           <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
