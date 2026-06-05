@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useMutation } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
@@ -29,6 +29,25 @@ const profileSchema = z.object({
 
 type ProfileForm = z.infer<typeof profileSchema>;
 
+const DRAFT_KEY = 'profileDraft';
+
+function loadDraft(): Partial<ProfileForm> {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDraft(values: Partial<ProfileForm>) {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(values)); } catch {}
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
+}
+
 export default function ProfileCreationPage() {
   const [, navigate] = useLocation();
   const { user, updateUser } = useAuth();
@@ -37,18 +56,26 @@ export default function ProfileCreationPage() {
   const [additionalPhoto, setAdditionalPhoto] = useState<File | null>(null);
   const [additionalPhoto2, setAdditionalPhoto2] = useState<File | null>(null);
 
+  // Build initial values: server data takes priority, then localStorage draft, then empty
+  const draft = loadDraft();
   const form = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      firstName: '',
-      lastName: '',
-      gender: 'male',
-      intention: undefined as any,
-      religion: '',
-      aboutMe: '',
-      age: 18
+      firstName:  (user?.firstName  || draft.firstName  || '') as string,
+      lastName:   (user?.lastName   || draft.lastName   || '') as string,
+      gender:     (user?.gender     || draft.gender     || 'male') as 'male' | 'female',
+      intention:  (user?.intention  || draft.intention  || undefined) as any,
+      religion:   (user?.religion   || draft.religion   || '') as string,
+      aboutMe:    (user?.aboutMe    || draft.aboutMe    || '') as string,
+      age:        (user?.age        || draft.age        || 18) as number,
     }
   });
+
+  // Auto-save draft to localStorage whenever any field changes
+  useEffect(() => {
+    const subscription = form.watch((values) => saveDraft(values));
+    return () => subscription.unsubscribe();
+  }, [form]);
 
   const profileMutation = useMutation({
     mutationFn: async (formData: FormData) => {
@@ -62,11 +89,11 @@ export default function ProfileCreationPage() {
       return body;
     },
     onSuccess: async () => {
+      clearDraft(); // draft no longer needed once saved to server
       toast({
         title: "Profile created!",
         description: "Your profile has been created successfully.",
       });
-      // Refresh the user data so the app knows profile is complete
       await queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
       navigate('/verify');
     },
