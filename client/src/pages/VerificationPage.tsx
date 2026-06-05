@@ -231,12 +231,15 @@ export default function VerificationPage() {
             <div className="flex flex-col gap-5 items-center py-12" data-testid="step-loading">
               <RefreshCw className="text-blue-600 w-12 h-12 animate-spin" />
               <p className="text-center text-sm text-gray-600">{modelLoadMsg}</p>
-              <p className="text-center text-xs text-gray-400">First time only — cached after this</p>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-center">
+                <p className="text-xs text-amber-700 font-medium">First time only</p>
+                <p className="text-xs text-amber-600 mt-0.5">Face recognition models are downloading (~10–30 seconds). This is a one-time setup — it will be instant next time.</p>
+              </div>
             </div>
           )}
 
           {step === 'live-scan' && (
-            <div className="flex flex-col gap-5 items-center" data-testid="step-live-scan">
+            <div className="flex flex-col gap-4 items-center" data-testid="step-live-scan">
               <div className="relative">
                 <video
                   autoPlay
@@ -270,6 +273,14 @@ export default function VerificationPage() {
                   <CheckCircle2 className="w-4 h-4" /> Turn R
                 </div>
               </div>
+
+              {/* Blink tips shown only while waiting for blinks */}
+              {liveness.blinks < 2 && liveness.faceDetected && (
+                <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 w-full text-center">
+                  <p className="text-xs text-blue-700 font-semibold mb-1">💡 Blink tip</p>
+                  <p className="text-xs text-blue-600">Close both eyes slowly and fully, then open. Do this twice. Make sure you are in good light.</p>
+                </div>
+              )}
             </div>
           )}
 
