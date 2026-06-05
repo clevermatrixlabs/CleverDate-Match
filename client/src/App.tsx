@@ -51,17 +51,6 @@ function Router() {
 import { WebSocketProvider } from "@/context/WebSocketContext";
 
 function App() {
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Simulate app loading for a smooth experience
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 2000);
-    
-    return () => clearTimeout(timer);
-  }, []);
-
   // Check for service worker
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -73,10 +62,6 @@ function App() {
     }
   }, []);
 
-  if (isLoading) {
-    return <AppLoading />;
-  }
-  
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

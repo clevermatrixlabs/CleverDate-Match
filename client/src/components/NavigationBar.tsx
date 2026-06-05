@@ -1,8 +1,10 @@
 import { useAuth } from '@/context/AuthContext';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
+import { Heart, ShieldCheck, Settings } from 'lucide-react';
 
 export default function NavigationBar() {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const isAdmin = !!(user as any)?.isAdmin;
 
   return (
@@ -11,7 +13,7 @@ export default function NavigationBar() {
         <div className="flex justify-between h-16">
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
-              <i className="ri-heart-3-fill text-2xl mr-2 text-white"></i>
+              <Heart className="w-6 h-6 mr-2 fill-white text-white" />
               <h1 className="text-white font-poppins font-bold text-xl">Tim Clever Date</h1>
             </div>
           </div>
@@ -22,13 +24,17 @@ export default function NavigationBar() {
                 className="flex items-center gap-1 rounded-full px-3 py-1.5 bg-white/20 text-white hover:bg-white/30 transition-colors text-sm font-medium"
                 data-testid="link-admin-dashboard"
               >
-                <i className="ri-shield-star-line"></i>
+                <ShieldCheck className="w-4 h-4" />
                 <span className="hidden sm:inline">Owner</span>
               </Link>
             )}
             {user && (
-              <button className="rounded-full p-1.5 bg-white/20 text-white hover:bg-white/30 focus:outline-none transition-colors">
-                <i className="ri-settings-3-line text-xl"></i>
+              <button
+                onClick={() => navigate('~/app/profile')}
+                className="rounded-full p-1.5 bg-white/20 text-white hover:bg-white/30 focus:outline-none transition-colors"
+                title="Profile & Settings"
+              >
+                <Settings className="w-5 h-5" />
               </button>
             )}
           </div>
