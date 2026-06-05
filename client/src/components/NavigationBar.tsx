@@ -18,7 +18,7 @@ export default function NavigationBar() {
           <div className="flex items-center gap-2">
             {isAdmin && (
               <Link
-                href="/admin"
+                href="~/admin"
                 className="flex items-center gap-1 rounded-full px-3 py-1.5 bg-white/20 text-white hover:bg-white/30 transition-colors text-sm font-medium"
                 data-testid="link-admin-dashboard"
               >

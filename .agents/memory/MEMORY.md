@@ -1,1 +1,2 @@
 - [DB push command](db-push.md) — must use PG* env vars override, not DATABASE_URL (points to dead Supabase host)
+- [Wouter nest routing](wouter-nest-routing.md) — inside nest() context, use ~/path for absolute hrefs; plain /path is relative to nest base and doubles up.

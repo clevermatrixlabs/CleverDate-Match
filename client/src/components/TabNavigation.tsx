@@ -5,11 +5,14 @@ export default function TabNavigation() {
   // (e.g. "/", "/messages"). We compare against those relative paths.
   const [location] = useLocation();
 
+  // Use ~ prefix for absolute paths — inside a wouter nest("/app") context,
+  // plain "/foo" is resolved relative to the nest base and becomes "/app/foo".
+  // The ~ prefix forces an absolute path from the site root.
   const tabs = [
-    { href: '/app/', match: '/', label: 'Match', iconActive: 'ri-heart-3-fill', iconIdle: 'ri-heart-line' },
-    { href: '/app/messages', match: '/messages', label: 'Messages', iconActive: 'ri-chat-1-fill', iconIdle: 'ri-chat-1-line' },
-    { href: '/app/profile', match: '/profile', label: 'Profile', iconActive: 'ri-user-fill', iconIdle: 'ri-user-line' },
-    { href: '/app/wallet', match: '/wallet', label: 'Wallet', iconActive: 'ri-wallet-3-fill', iconIdle: 'ri-wallet-3-line' },
+    { href: '~/app/', match: '/', label: 'Match', iconActive: 'ri-heart-3-fill', iconIdle: 'ri-heart-line' },
+    { href: '~/app/messages', match: '/messages', label: 'Messages', iconActive: 'ri-chat-1-fill', iconIdle: 'ri-chat-1-line' },
+    { href: '~/app/profile', match: '/profile', label: 'Profile', iconActive: 'ri-user-fill', iconIdle: 'ri-user-line' },
+    { href: '~/app/wallet', match: '/wallet', label: 'Wallet', iconActive: 'ri-wallet-3-fill', iconIdle: 'ri-wallet-3-line' },
   ];
 
   return (
