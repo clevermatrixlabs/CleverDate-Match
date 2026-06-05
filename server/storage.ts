@@ -29,7 +29,7 @@ async function withRetry(operation, maxRetries = 5, delay = 1000) {
 
   throw lastError;
 }
-import { eq, and, not, desc, or, sql } from "drizzle-orm";
+import { eq, and, not, desc, or, sql, notInArray } from "drizzle-orm";
 
 // Interface with all required CRUD methods
 export interface IStorage {
@@ -410,12 +410,28 @@ export class DrizzleStorage implements IStorage {
 
   async updateUser(id: number, userData: Partial<User>): Promise<User> {
     if (!db) throw new Error("Database not available");
+
+    // Sanitize PostgreSQL array columns — if they arrive as a JSON string ("[]" / "[\"x\"]")
+    // or as something other than a real JS array, normalise them so Drizzle sends the right
+    // wire format and PostgreSQL doesn't throw "malformed array literal".
+    const sanitized: any = { ...userData };
+    for (const col of ["preferredCountries", "faceDescriptor", "interests"] as const) {
+      if (col in sanitized) {
+        const val = sanitized[col];
+        if (typeof val === "string") {
+          // e.g. "[]" or "[\"Tech\"]" — parse it back to an array
+          try { sanitized[col] = JSON.parse(val); } catch { sanitized[col] = []; }
+        }
+        if (!Array.isArray(sanitized[col])) {
+          sanitized[col] = [];
+        }
+        // For text[] columns an empty JS array is fine; Drizzle will send '{}'
+      }
+    }
+
     const results = await withRetry(() => db
       .update(schema.users)
-      .set({ 
-        ...userData,
-        updatedAt: new Date() 
-      })
+      .set({ ...sanitized, updatedAt: new Date() })
       .where(eq(schema.users.id, id))
       .returning());
     return results[0];
@@ -579,18 +595,20 @@ export class DrizzleStorage implements IStorage {
     );
 
     // Now find potential matches — exclude admins and suspended users
+    const baseConditions = and(
+      eq(schema.users.gender, oppositeGender),
+      eq(schema.users.isVerified, true),
+      eq(schema.users.isAdmin, false),
+      eq(schema.users.isSuspended, false),
+      // Only add exclusion when there are IDs to exclude — passing [] to notInArray
+      // or JSON.stringify([]) to raw SQL both crash PostgreSQL
+      ...(interactedUserIds.length > 0 ? [notInArray(schema.users.id, interactedUserIds)] : [])
+    );
+
     const results = await withRetry(() => db
       .select()
       .from(schema.users)
-      .where(
-        and(
-          eq(schema.users.gender, oppositeGender),
-          eq(schema.users.isVerified, true),
-          eq(schema.users.isAdmin, false),
-          eq(schema.users.isSuspended, false),
-          not(sql`${schema.users.id} = ANY(${JSON.stringify(interactedUserIds)})`)
-        )
-      )
+      .where(baseConditions)
       .limit(10));
 
     return results;
