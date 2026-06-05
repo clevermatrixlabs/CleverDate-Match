@@ -34,8 +34,8 @@ export default function ProfileCreationPage() {
   const { user, updateUser } = useAuth();
   const { toast } = useToast();
   const [primaryPhoto, setPrimaryPhoto] = useState<File | null>(null);
-  const [profileVideo, setProfileVideo] = useState<File | null>(null);
   const [additionalPhoto, setAdditionalPhoto] = useState<File | null>(null);
+  const [additionalPhoto2, setAdditionalPhoto2] = useState<File | null>(null);
 
   const form = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -100,19 +100,17 @@ export default function ProfileCreationPage() {
       return;
     }
 
-    // Profile video is optional — the mandatory face scan happens on the next step.
-
-    // Validate file sizes upfront to avoid long uploads that fail server-side.
+    // Validate file sizes upfront to avoid slow/failed uploads.
     const MAX = 5 * 1024 * 1024; // 5 MB
     if (primaryPhoto.size > MAX) {
       toast({ variant: 'destructive', title: 'Photo too large', description: 'Please choose a photo under 5 MB.' });
       return;
     }
-    if (profileVideo && profileVideo.size > MAX) {
-      toast({ variant: 'destructive', title: 'Video too large', description: 'Please choose a video under 5 MB or skip it.' });
+    if (additionalPhoto && additionalPhoto.size > MAX) {
+      toast({ variant: 'destructive', title: 'Photo too large', description: 'Additional photo must be under 5 MB.' });
       return;
     }
-    if (additionalPhoto && additionalPhoto.size > MAX) {
+    if (additionalPhoto2 && additionalPhoto2.size > MAX) {
       toast({ variant: 'destructive', title: 'Photo too large', description: 'Additional photo must be under 5 MB.' });
       return;
     }
@@ -120,11 +118,11 @@ export default function ProfileCreationPage() {
     // Create FormData to send files
     const formData = new FormData();
     formData.append('primaryPhoto', primaryPhoto);
-    if (profileVideo) {
-      formData.append('profileVideo', profileVideo);
-    }
     if (additionalPhoto) {
       formData.append('additionalPhoto', additionalPhoto);
+    }
+    if (additionalPhoto2) {
+      formData.append('additionalPhoto2', additionalPhoto2);
     }
 
     // Append form data
@@ -348,86 +346,61 @@ export default function ProfileCreationPage() {
               />
 
               <div className="mb-6">
-                <Label className="block text-sm font-medium text-gray-700 mb-2">Add Photos & Video</Label>
+                <Label className="block text-sm font-medium text-gray-700 mb-1">Photos <span className="text-red-500">*</span></Label>
+                <p className="text-xs text-gray-500 mb-3">Upload up to 3 photos. First photo is required — the others are optional.</p>
                 
                 <div className="grid grid-cols-3 gap-3 mb-3">
+                  {/* Primary photo — required */}
                   <div 
-                    className={`aspect-square bg-[#E9ECEF] rounded-lg border-2 border-dashed ${primaryPhoto ? 'border-accent' : 'border-gray-300'} flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 relative overflow-hidden`}
+                    className={`aspect-square bg-[#E9ECEF] rounded-lg border-2 border-dashed ${primaryPhoto ? 'border-blue-500' : 'border-gray-300'} flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 relative overflow-hidden`}
                     onClick={() => document.getElementById('primary-photo')?.click()}
                   >
                     {primaryPhoto ? (
-                      <img 
-                        src={URL.createObjectURL(primaryPhoto)} 
-                        alt="Primary" 
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={URL.createObjectURL(primaryPhoto)} alt="Primary" className="w-full h-full object-cover" />
                     ) : (
                       <>
                         <i className="ri-image-add-line text-xl text-gray-400"></i>
-                        <span className="text-xs text-gray-500 mt-1">Primary*</span>
+                        <span className="text-xs text-gray-500 mt-1">Main photo*</span>
                       </>
                     )}
-                    <input 
-                      id="primary-photo" 
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden" 
-                      onChange={(e) => handleFileChange(e, setPrimaryPhoto)}
-                    />
+                    <input id="primary-photo" type="file" accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, setPrimaryPhoto)} />
                   </div>
                   
+                  {/* Additional photo 1 — optional */}
                   <div 
-                    className={`aspect-square bg-[#E9ECEF] rounded-lg border-2 border-dashed ${profileVideo ? 'border-accent' : 'border-gray-300'} flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 relative overflow-hidden`}
-                    onClick={() => document.getElementById('profile-video')?.click()}
-                  >
-                    {profileVideo ? (
-                      <video 
-                        src={URL.createObjectURL(profileVideo)} 
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <>
-                        <i className="ri-video-add-line text-xl text-gray-400"></i>
-                        <span className="text-xs text-gray-500 mt-1">Video</span>
-                      </>
-                    )}
-                    <input 
-                      id="profile-video" 
-                      type="file" 
-                      accept="video/*" 
-                      className="hidden" 
-                      onChange={(e) => handleFileChange(e, setProfileVideo)}
-                    />
-                  </div>
-                  
-                  <div 
-                    className={`aspect-square bg-[#E9ECEF] rounded-lg border-2 border-dashed ${additionalPhoto ? 'border-accent' : 'border-gray-300'} flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 relative overflow-hidden`}
+                    className={`aspect-square bg-[#E9ECEF] rounded-lg border-2 border-dashed ${additionalPhoto ? 'border-blue-400' : 'border-gray-300'} flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 relative overflow-hidden`}
                     onClick={() => document.getElementById('additional-photo')?.click()}
                   >
                     {additionalPhoto ? (
-                      <img 
-                        src={URL.createObjectURL(additionalPhoto)} 
-                        alt="Additional" 
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={URL.createObjectURL(additionalPhoto)} alt="Additional" className="w-full h-full object-cover" />
                     ) : (
                       <>
                         <i className="ri-add-line text-xl text-gray-400"></i>
                         <span className="text-xs text-gray-500 mt-1">Optional</span>
                       </>
                     )}
-                    <input 
-                      id="additional-photo" 
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden" 
-                      onChange={(e) => handleFileChange(e, setAdditionalPhoto)}
-                    />
+                    <input id="additional-photo" type="file" accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, setAdditionalPhoto)} />
+                  </div>
+
+                  {/* Additional photo 2 — optional */}
+                  <div 
+                    className={`aspect-square bg-[#E9ECEF] rounded-lg border-2 border-dashed ${additionalPhoto2 ? 'border-blue-400' : 'border-gray-300'} flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 relative overflow-hidden`}
+                    onClick={() => document.getElementById('additional-photo-2')?.click()}
+                  >
+                    {additionalPhoto2 ? (
+                      <img src={URL.createObjectURL(additionalPhoto2)} alt="Additional 2" className="w-full h-full object-cover" />
+                    ) : (
+                      <>
+                        <i className="ri-add-line text-xl text-gray-400"></i>
+                        <span className="text-xs text-gray-500 mt-1">Optional</span>
+                      </>
+                    )}
+                    <input id="additional-photo-2" type="file" accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, setAdditionalPhoto2)} />
                   </div>
                 </div>
                 
                 <p className="text-xs text-gray-500">
-                  * Primary photo is required (under 5 MB). Video and extra photo are optional — the live face scan on the next step is the actual verification.
+                  * Main photo required (under 5 MB). Extra photos are optional. Your live face scan happens on the next step.
                 </p>
               </div>
               

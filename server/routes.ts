@@ -141,16 +141,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     isSuspended: !!user.isSuspended,
   });
 
-  // Auto-promote the configured ADMIN_EMAIL to admin (idempotent, safe to call repeatedly).
+  // Auto-promote the configured ADMIN_EMAIL to admin, verify them, and give them a complete profile (idempotent).
   const ensureAdminFlag = async (user: any) => {
     const adminEmail = (process.env.ADMIN_EMAIL || "").toLowerCase().trim();
     if (!adminEmail) return user;
-    if (user?.email?.toLowerCase() === adminEmail && !user.isAdmin) {
-      try {
-        const updated = await storage.updateUser(user.id, { isAdmin: true } as any);
-        return updated || user;
-      } catch (e) {
-        console.warn("Failed to auto-promote admin:", (e as any)?.message);
+    if (user?.email?.toLowerCase() === adminEmail) {
+      const needsUpdate = !user.isAdmin || !user.isVerified || !user.firstName;
+      if (needsUpdate) {
+        try {
+          const adminUpdates: any = { isAdmin: true, isVerified: true, isEmailVerified: true };
+          // Give the admin a baseline profile so the completeness gate never blocks them
+          if (!user.firstName) adminUpdates.firstName = "Tim";
+          if (!user.lastName) adminUpdates.lastName = "Clever";
+          if (!user.gender) adminUpdates.gender = "male";
+          if (!user.age) adminUpdates.age = 30;
+          if (!user.intention) adminUpdates.intention = "getting-to-know";
+          if (!user.aboutMe) adminUpdates.aboutMe = "App owner and administrator.";
+          if (!user.profilePicture) adminUpdates.profilePicture = "admin-default";
+          if (!user.interests || (user.interests as string[]).length === 0) adminUpdates.interests = ["Technology"];
+          const updated = await storage.updateUser(user.id, adminUpdates);
+          return updated || user;
+        } catch (e) {
+          console.warn("Failed to auto-promote admin:", (e as any)?.message);
+        }
       }
     }
     return user;
@@ -348,11 +361,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  app.get("/api/auth/me", requireAuth, (req, res) => {
-    const user = req.user as any;
+  app.get("/api/auth/me", requireAuth, async (req, res) => {
+    let user = req.user as any;
     if (!user) {
       return res.status(401).json({ message: "Not authenticated" });
     }
+    // Auto-promote + auto-verify admin on every session check
+    user = await ensureAdminFlag(user);
     res.json(safeUser(user));
   });
 
@@ -556,11 +571,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post(
     "/api/users/profile",
     requireAuth,
-    upload.fields([
-      { name: "primaryPhoto", maxCount: 1 },
-      { name: "profileVideo", maxCount: 1 },
-      { name: "additionalPhoto", maxCount: 1 },
-    ]),
+    (req: any, res: any, next: any) => {
+      // Wrap multer so file-size errors return a proper JSON response instead of crashing
+      upload.fields([
+        { name: "primaryPhoto", maxCount: 1 },
+        { name: "profileVideo", maxCount: 1 },
+        { name: "additionalPhoto", maxCount: 1 },
+      ])(req, res, (err: any) => {
+        if (err) {
+          const msg = err.code === "LIMIT_FILE_SIZE"
+            ? "File is too large. Maximum size is 5 MB per file."
+            : err.message || "File upload error";
+          return res.status(400).json({ message: msg });
+        }
+        next();
+      });
+    },
     async (req: any, res) => {
       try {
         const user = req.user as any;

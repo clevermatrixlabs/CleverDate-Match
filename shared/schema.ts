@@ -213,6 +213,9 @@ export const profileSchema = z.object({
   firstName: z.string().min(2, "First name is required"),
   lastName: z.string().min(2, "Last name is required"),
   gender: z.enum(["male", "female"]),
+  intention: z.enum(["marriage", "long-term", "getting-to-know"], {
+    required_error: "Please tell us what you are looking for",
+  }),
   religion: z.string().optional(),
   aboutMe: z.string().min(10, "Tell us a bit more about yourself").max(300, "Bio is too long"),
   age: z.number().min(18, "You must be at least 18 years old").max(100, "Age is invalid"),
