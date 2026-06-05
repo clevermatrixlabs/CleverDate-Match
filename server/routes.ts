@@ -636,13 +636,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper — returns list of missing required profile fields
+  function getProfileMissingFields(u: any): string[] {
+    const missing: string[] = [];
+    if (!u.firstName) missing.push("First name");
+    if (!u.lastName) missing.push("Last name");
+    if (!u.age || u.age < 18) missing.push("Age");
+    if (!u.gender) missing.push("Gender");
+    if (!u.profilePicture) missing.push("Profile photo");
+    if (!u.aboutMe || u.aboutMe.trim().length < 10) missing.push("Bio (at least 10 characters)");
+    if (!u.interests || (u.interests as string[]).length === 0) missing.push("At least one interest");
+    return missing;
+  }
+
   // Match routes
   app.get("/api/matches/potential", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
 
-      // Get potential matches (opposite gender, verified, not interacted)
+      // Must be verified
+      if (!user.isVerified) {
+        return res.status(403).json({
+          message: "You must complete face & ID verification before matching.",
+          requiresVerification: true,
+        });
+      }
+
+      // Must have a complete profile
+      const missing = getProfileMissingFields(user);
+      if (missing.length > 0) {
+        return res.status(403).json({
+          message: "Complete your profile before matching.",
+          requiresProfile: true,
+          missingFields: missing,
+        });
+      }
+
+      // Get potential matches — opposite gender, verified, complete profile
       let potentialMatches = await storage.getPotentialMatches(user.id, user.gender);
+
+      // Only show candidates who are also verified and have complete profiles
+      potentialMatches = potentialMatches.filter((m) => {
+        if (!m.isVerified) return false;
+        const mMissing = getProfileMissingFields(m);
+        return mMissing.length === 0;
+      });
 
       // Filter by age preferences
       const minAge = user.minAgePreference ?? 18;
@@ -652,15 +690,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       // Filter by preferred countries if set
-      if (user.preferredCountries && user.preferredCountries.length > 0) {
+      if (user.preferredCountries && (user.preferredCountries as string[]).length > 0) {
         const preferred = potentialMatches.filter(
-          (m) => m.country && user.preferredCountries.includes(m.country)
+          (m) => m.country && (user.preferredCountries as string[]).includes(m.country)
         );
-        // Fall back to all matches if no one matches the country filter
         if (preferred.length > 0) potentialMatches = preferred;
       }
 
-      // Score and rank using compatibility algorithm
+      // Score and rank — scores used for ordering only, not shown to users
       const { findOptimalMatches } = await import('./ai');
       const ranked = await findOptimalMatches(user, potentialMatches, 10);
       res.json(ranked);
