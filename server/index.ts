@@ -3,10 +3,17 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupEngagementService } from "./engagement";
 import { initStorage } from "./storage";
+import path from "path";
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Serve uploaded profile photos / videos as public static files
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), {
+  maxAge: "7d",
+  etag: true,
+}));
 
 app.use((req, res, next) => {
   const start = Date.now();

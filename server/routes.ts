@@ -22,8 +22,18 @@ import * as path from "path";
 import multer from "multer";
 import { sendVerificationCode, isEmailConfigured } from "./email";
 
-// Multer — keep files in memory as Buffers, convert to base64 data URLs for storage
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+// Multer — save uploaded files to disk in /uploads, serve them as static assets
+const uploadsDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+const diskStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || (file.mimetype.startsWith("video") ? ".mp4" : ".jpg");
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+  },
+});
+const upload = multer({ storage: diskStorage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 declare module "express-session" {
   interface SessionData {
@@ -577,6 +587,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         { name: "primaryPhoto", maxCount: 1 },
         { name: "profileVideo", maxCount: 1 },
         { name: "additionalPhoto", maxCount: 1 },
+        { name: "additionalPhoto2", maxCount: 1 },
       ])(req, res, (err: any) => {
         if (err) {
           const msg = err.code === "LIMIT_FILE_SIZE"
@@ -597,14 +608,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           age: req.body.age ? parseInt(req.body.age, 10) : undefined,
         });
 
-        // We only record that media was uploaded — storing multi-MB base64 blobs
-        // in MemStorage makes every /api/auth/me response huge and slow.
         const files = req.files as { [fieldname: string]: Express.Multer.File[] } || {};
 
         const updates: any = { ...validatedData };
-        if (files.primaryPhoto?.[0]) updates.profilePicture = `uploaded:${files.primaryPhoto[0].size}b`;
-        if (files.profileVideo?.[0]) updates.profileVideo = `uploaded:${files.profileVideo[0].size}b`;
-        if (files.additionalPhoto?.[0]) updates.additionalPicture1 = `uploaded:${files.additionalPhoto[0].size}b`;
+        // Store the public URL so the browser can fetch the image directly
+        if (files.primaryPhoto?.[0]) updates.profilePicture = `/uploads/${files.primaryPhoto[0].filename}`;
+        if (files.profileVideo?.[0]) updates.profileVideo = `/uploads/${files.profileVideo[0].filename}`;
+        if (files.additionalPhoto?.[0]) updates.additionalPicture1 = `/uploads/${files.additionalPhoto[0].filename}`;
+        if (files.additionalPhoto2?.[0]) updates.additionalPicture2 = `/uploads/${files.additionalPhoto2[0].filename}`;
 
         await storage.updateUser(user.id, updates);
 
