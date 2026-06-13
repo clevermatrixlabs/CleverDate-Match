@@ -5,7 +5,8 @@ import {
   Message, InsertMessage,
   Subscription, InsertSubscription,
   Transaction, InsertTransaction,
-  Social, InsertSocial
+  Social, InsertSocial,
+  Livestream, InsertLivestream,
 } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
@@ -83,6 +84,13 @@ export interface IStorage {
   getAllSocials(): Promise<Social[]>;
   deleteSocial(id: number): Promise<void>;
   toggleSocial(id: number, isActive: boolean): Promise<Social>;
+
+  // Livestream methods
+  createLivestream(data: InsertLivestream): Promise<Livestream>;
+  getActiveLivestream(): Promise<Livestream | undefined>;
+  getLivestream(id: number): Promise<Livestream | undefined>;
+  endLivestream(id: number): Promise<void>;
+  updateLivestreamStats(id: number, updates: Partial<Pick<Livestream, 'viewerCount' | 'likeCount' | 'totalGifts' | 'guestIds'>>): Promise<Livestream>;
 }
 
 // In-memory storage for testing and fallback
@@ -395,6 +403,48 @@ export class MemStorage implements IStorage {
     if (!social) throw new Error("Social not found");
     const updated = { ...social, isActive };
     this.socials.set(id, updated);
+    return updated;
+  }
+
+  // Livestream methods (in-memory)
+  private livestreams: Map<number, Livestream> = new Map();
+  private currentLivestreamId = 1;
+
+  async createLivestream(data: InsertLivestream): Promise<Livestream> {
+    const ls: Livestream = {
+      id: this.currentLivestreamId++,
+      hostId: data.hostId,
+      title: data.title ?? "Live",
+      status: "live",
+      viewerCount: 0,
+      likeCount: 0,
+      totalGifts: "0",
+      guestIds: [],
+      startedAt: new Date(),
+      endedAt: null,
+    };
+    this.livestreams.set(ls.id, ls);
+    return ls;
+  }
+
+  async getActiveLivestream(): Promise<Livestream | undefined> {
+    return Array.from(this.livestreams.values()).find(l => l.status === "live");
+  }
+
+  async getLivestream(id: number): Promise<Livestream | undefined> {
+    return this.livestreams.get(id);
+  }
+
+  async endLivestream(id: number): Promise<void> {
+    const ls = this.livestreams.get(id);
+    if (ls) this.livestreams.set(id, { ...ls, status: "ended", endedAt: new Date() });
+  }
+
+  async updateLivestreamStats(id: number, updates: Partial<Pick<Livestream, 'viewerCount' | 'likeCount' | 'totalGifts' | 'guestIds'>>): Promise<Livestream> {
+    const ls = this.livestreams.get(id);
+    if (!ls) throw new Error("Livestream not found");
+    const updated = { ...ls, ...updates };
+    this.livestreams.set(id, updated);
     return updated;
   }
 }
@@ -769,6 +819,46 @@ export class DrizzleStorage implements IStorage {
       db.update(schema.socials).set({ isActive }).where(eq(schema.socials.id, id)).returning()
     );
     if (!results[0]) throw new Error("Social not found");
+    return results[0];
+  }
+
+  // Livestream methods (Drizzle)
+  async createLivestream(data: InsertLivestream): Promise<Livestream> {
+    if (!db) throw new Error("Database not available");
+    const results = await withRetry(() =>
+      db.insert(schema.livestreams).values({ ...data, startedAt: new Date() }).returning()
+    );
+    return results[0];
+  }
+
+  async getActiveLivestream(): Promise<Livestream | undefined> {
+    if (!db) return undefined;
+    const results = await withRetry(() =>
+      db.select().from(schema.livestreams).where(eq(schema.livestreams.status, "live")).limit(1)
+    );
+    return results[0];
+  }
+
+  async getLivestream(id: number): Promise<Livestream | undefined> {
+    if (!db) return undefined;
+    const results = await withRetry(() =>
+      db.select().from(schema.livestreams).where(eq(schema.livestreams.id, id)).limit(1)
+    );
+    return results[0];
+  }
+
+  async endLivestream(id: number): Promise<void> {
+    if (!db) throw new Error("Database not available");
+    await withRetry(() =>
+      db.update(schema.livestreams).set({ status: "ended", endedAt: new Date() }).where(eq(schema.livestreams.id, id))
+    );
+  }
+
+  async updateLivestreamStats(id: number, updates: Partial<Pick<Livestream, 'viewerCount' | 'likeCount' | 'totalGifts' | 'guestIds'>>): Promise<Livestream> {
+    if (!db) throw new Error("Database not available");
+    const results = await withRetry(() =>
+      db.update(schema.livestreams).set(updates).where(eq(schema.livestreams.id, id)).returning()
+    );
     return results[0];
   }
 }

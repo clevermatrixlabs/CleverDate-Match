@@ -39,6 +39,7 @@ import {
   Share2,
   Trash2,
   Plus,
+  Radio,
 } from 'lucide-react';
 
 type AdminStats = {
@@ -281,9 +282,19 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-white/80">Tim Clever Date — admin view</p>
             </div>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => navigate('/app/')}>
-            Back to app
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => navigate('/admin/live')}
+              className="bg-red-600 hover:bg-red-500 text-white font-bold shadow-lg"
+              size="sm"
+            >
+              <Radio className="h-4 w-4 mr-1.5 animate-pulse" />
+              Go Live
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/app/')}>
+              Back to app
+            </Button>
+          </div>
         </div>
       </header>
 

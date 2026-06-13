@@ -101,6 +101,20 @@ export const transactions = pgTable("transactions", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Livestream table
+export const livestreams = pgTable("livestreams", {
+  id: serial("id").primaryKey(),
+  hostId: integer("host_id").notNull(),
+  title: text("title").notNull().default("Live"),
+  status: text("status", { enum: ["live", "ended"] }).notNull().default("live"),
+  viewerCount: integer("viewer_count").default(0),
+  likeCount: integer("like_count").default(0),
+  totalGifts: decimal("total_gifts", { precision: 10, scale: 2 }).default("0"),
+  guestIds: json("guest_ids").$type<number[]>().default([]),
+  startedAt: timestamp("started_at").defaultNow(),
+  endedAt: timestamp("ended_at"),
+});
+
 // Social table
 export const socials = pgTable("socials", {
   id: serial("id").primaryKey(),
@@ -148,6 +162,12 @@ export const insertSocialSchema = createInsertSchema(socials).omit({
   createdAt: true,
 });
 
+export const insertLivestreamSchema = createInsertSchema(livestreams).omit({
+  id: true,
+  startedAt: true,
+  endedAt: true,
+});
+
 // Define types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -169,6 +189,9 @@ export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 
 export type Social = typeof socials.$inferSelect;
 export type InsertSocial = z.infer<typeof insertSocialSchema>;
+
+export type Livestream = typeof livestreams.$inferSelect;
+export type InsertLivestream = z.infer<typeof insertLivestreamSchema>;
 
 // Auth related schemas — email-first, no username required
 export const loginSchema = z.object({

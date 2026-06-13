@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { broadcastToLive, broadcastLiveEnd } from "./engagement";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { json, urlencoded } from "express";
@@ -1687,6 +1688,130 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) {
       console.error("[gift-sub]", e?.message);
       res.status(500).json({ message: "Failed to gift subscription" });
+    }
+  });
+
+  // ── Live stream routes ────────────────────────────────────────────────────
+
+  // Start a live stream (admin only)
+  app.post("/api/live/start", requireAdmin, async (req: any, res) => {
+    try {
+      // End any existing live first
+      const existing = await storage.getActiveLivestream();
+      if (existing) await storage.endLivestream(existing.id);
+
+      const { title } = req.body;
+      const user = req.user as any;
+      const ls = await storage.createLivestream({
+        hostId: user.id,
+        title: title || "Tim's Live 🔴",
+        status: "live",
+        viewerCount: 0,
+        likeCount: 0,
+        totalGifts: "0",
+        guestIds: [],
+      });
+      res.json(ls);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to start live: " + e?.message });
+    }
+  });
+
+  // End a live stream (admin only)
+  app.post("/api/live/end", requireAdmin, async (req: any, res) => {
+    try {
+      const { id } = req.body;
+      if (id) await storage.endLivestream(Number(id));
+      else {
+        const active = await storage.getActiveLivestream();
+        if (active) await storage.endLivestream(active.id);
+      }
+      // Broadcast live:end to all viewers via engagement service
+      broadcastLiveEnd();
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to end live" });
+    }
+  });
+
+  // Get current active livestream (any authenticated user)
+  app.get("/api/live/current", requireAuth, async (_req, res) => {
+    try {
+      const ls = await storage.getActiveLivestream();
+      if (!ls) return res.status(404).json({ message: "No active livestream" });
+      res.json(ls);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to get livestream" });
+    }
+  });
+
+  // Send a gift during live (deducts from wallet)
+  app.post("/api/live/gift", requireAuth, async (req: any, res) => {
+    try {
+      const user = req.user as any;
+      const { giftId } = req.body;
+      const GIFT_COSTS: Record<string, number> = {
+        rose: 1, heart: 2, star: 5, crown: 10, diamond: 20, rocket: 50,
+      };
+      const GIFT_EMOJIS: Record<string, string> = {
+        rose: '🌹', heart: '💖', star: '⭐', crown: '👑', diamond: '💎', rocket: '🚀',
+      };
+      const cost = GIFT_COSTS[giftId];
+      if (!cost) return res.status(400).json({ message: "Invalid gift" });
+
+      const dbUser = await storage.getUser(user.id);
+      if (!dbUser) return res.status(404).json({ message: "User not found" });
+
+      const balance = parseFloat(String(dbUser.walletBalance ?? 0));
+      if (balance < cost) return res.status(402).json({ message: "Insufficient wallet balance" });
+
+      await storage.updateUser(user.id, { walletBalance: String(balance - cost) } as any);
+      await storage.createTransaction({
+        userId: user.id,
+        amount: String(cost),
+        type: "gift",
+        status: "completed",
+        recipientId: null,
+      });
+
+      // Update livestream gift total
+      const ls = await storage.getActiveLivestream();
+      if (ls) {
+        const newTotal = (parseFloat(String(ls.totalGifts ?? 0)) + cost).toFixed(2);
+        await storage.updateLivestreamStats(ls.id, { totalGifts: newTotal });
+      }
+
+      const userName = [dbUser.firstName, dbUser.lastName].filter(Boolean).join(' ') || 'User';
+      const giftData = { type: 'live:gift', userId: user.id, userName, giftEmoji: GIFT_EMOJIS[giftId], giftName: giftId, giftCost: cost };
+      broadcastToLive(giftData);
+
+      res.json({ success: true, newBalance: (balance - cost).toFixed(2) });
+    } catch (e: any) {
+      res.status(500).json({ message: "Gift failed: " + e?.message });
+    }
+  });
+
+  // Invite a viewer to be a guest (admin only)
+  app.post("/api/live/invite/:userId", requireAdmin, async (req: any, res) => {
+    try {
+      const targetUserId = parseInt(req.params.userId, 10);
+      const ls = await storage.getActiveLivestream();
+      if (!ls) return res.status(404).json({ message: "No active livestream" });
+
+      const target = await storage.getUser(targetUserId);
+      if (!target) return res.status(404).json({ message: "User not found" });
+
+      const currentGuests = (ls.guestIds as number[]) || [];
+      if (!currentGuests.includes(targetUserId)) {
+        await storage.updateLivestreamStats(ls.id, { guestIds: [...currentGuests, targetUserId] });
+      }
+
+      const targetName = [target.firstName, target.lastName].filter(Boolean).join(' ') || 'Guest';
+      broadcastToLive({ type: 'live:guest_added', userId: targetUserId, userName: targetName });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Invite failed" });
     }
   });
 

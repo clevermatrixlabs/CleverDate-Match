@@ -16,11 +16,12 @@ import ProfilePage from "@/pages/ProfilePage";
 import SettingsPage from "@/pages/SettingsPage";
 import AdminDashboardPage from "@/pages/AdminDashboardPage";
 const SubscribePage = lazy(() => import("@/pages/SubscribePage"));
+const LiveStudioPage = lazy(() => import("@/pages/LiveStudioPage"));
+const LiveWatchPage = lazy(() => import("@/pages/LiveWatchPage"));
 import { AuthProvider } from "@/context/AuthContext";
 import { MatchProvider } from "@/context/MatchContext";
 import { AppLoading } from "@/components/AppLoading";
 
-// Check if the app is being launched from a home screen
 const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
   || (window.navigator as any).standalone 
   || document.referrer.includes('android-app://');
@@ -33,7 +34,9 @@ function Router() {
         <Route path="/verify" component={VerificationPage} />
         <Route path="/create-profile" component={ProfileCreationPage} />
         <Route path="/admin" component={AdminDashboardPage} />
+        <Route path="/admin/live" component={LiveStudioPage} />
         <Route path="/app/subscribe" component={SubscribePage} />
+        <Route path="/app/live" component={LiveWatchPage} />
         <Route path="/app" nest>
           <Layout>
             <Switch>
@@ -55,7 +58,6 @@ function Router() {
 import { WebSocketProvider } from "@/context/WebSocketContext";
 
 function App() {
-  // Check for service worker
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
