@@ -1,37 +1,17 @@
-import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useLocation } from 'wouter';
-import { useMutation } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
-import { Pencil, CheckCircle2, ImageIcon, Plus, Instagram, Twitter, Youtube, UserCircle, Trash2, AlertTriangle } from 'lucide-react';
+import { Pencil, CheckCircle2, ImageIcon, Plus, Instagram, Twitter, Youtube, UserCircle, Settings } from 'lucide-react';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
-  const { toast } = useToast();
-  const [deleteStep, setDeleteStep] = useState<'idle' | 'confirm1' | 'confirm2'>('idle');
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   const handleLogout = async () => {
     await logout();
     navigate('~/');
   };
-
-  const deleteMutation = useMutation({
-    mutationFn: () => apiRequest('DELETE', '/users/me', {}),
-    onSuccess: () => {
-      toast({ title: 'Account deleted', description: 'All your data has been permanently removed.' });
-      navigate('~/');
-    },
-    onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Deletion failed', description: e.message || 'Please try again.' });
-      setDeleteStep('idle');
-    },
-  });
 
   if (!user) {
     return (
@@ -195,72 +175,23 @@ export default function ProfilePage() {
             </div>
           </div>
 
+          {/* Account Settings + Logout */}
+          <Button
+            variant="outline"
+            className="w-full rounded-xl mb-3 border-blue-200 text-blue-700 hover:bg-blue-50 flex items-center gap-2"
+            onClick={() => navigate('~/app/settings')}
+          >
+            <Settings className="w-4 h-4" />
+            Account Settings
+          </Button>
+
           <Button
             variant="destructive"
-            className="w-full rounded-xl mb-3"
+            className="w-full rounded-xl"
             onClick={handleLogout}
           >
             Logout
           </Button>
-
-          {/* Delete account — three-step with text confirmation */}
-          {deleteStep === 'idle' && (
-            <button
-              onClick={() => setDeleteStep('confirm1')}
-              className="w-full text-xs text-red-400 hover:text-red-600 py-2 transition-colors flex items-center justify-center gap-1"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Delete my account & all data
-            </button>
-          )}
-
-          {deleteStep === 'confirm1' && (
-            <div className="border border-red-200 bg-red-50 rounded-xl p-4 space-y-3">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-red-700">Delete account permanently?</p>
-                  <p className="text-xs text-red-600 mt-0.5">
-                    This will erase your profile, photos, messages, matches, and all personal data. This action is irreversible.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="flex-1" onClick={() => setDeleteStep('idle')}>Cancel</Button>
-                <Button size="sm" variant="destructive" className="flex-1" onClick={() => setDeleteStep('confirm2')}>
-                  Yes, continue
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {deleteStep === 'confirm2' && (
-            <div className="border border-red-300 bg-red-50 rounded-xl p-4 space-y-3">
-              <p className="text-sm font-semibold text-red-700">Final confirmation</p>
-              <p className="text-xs text-red-600">
-                Type <strong>DELETE</strong> in the box below to permanently remove your account.
-              </p>
-              <Input
-                value={deleteConfirmText}
-                onChange={e => setDeleteConfirmText(e.target.value)}
-                placeholder="Type DELETE to confirm"
-                className="border-red-300 focus:ring-red-400"
-              />
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="flex-1" onClick={() => { setDeleteStep('idle'); setDeleteConfirmText(''); }}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="flex-1"
-                  disabled={deleteConfirmText !== 'DELETE' || deleteMutation.isPending}
-                  onClick={() => deleteMutation.mutate()}
-                >
-                  {deleteMutation.isPending ? 'Deleting…' : 'Delete forever'}
-                </Button>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>

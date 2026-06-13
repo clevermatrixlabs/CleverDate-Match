@@ -22,20 +22,61 @@ import * as path from "path";
 import multer from "multer";
 import bcrypt from "bcryptjs";
 import { sendVerificationCode, isEmailConfigured } from "./email";
+import { v2 as cloudinary } from "cloudinary";
 
 const BCRYPT_ROUNDS = 12;
 async function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, BCRYPT_ROUNDS);
 }
 async function verifyPassword(plain: string, stored: string): Promise<boolean> {
-  // Support both bcrypt hashes and legacy plain-text passwords (auto-upgrade on login)
   if (stored.startsWith('$2')) return bcrypt.compare(plain, stored);
-  return plain === stored; // legacy plain-text — will be rehashed on successful login
+  return plain === stored;
 }
 
-// Multer — save uploaded files to disk in /uploads, serve them as static assets
+// ── Cloudinary config (falls back to local disk if env vars not set) ──────────
+const CLOUDINARY_CONFIGURED = !!(
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET
+);
+
+if (CLOUDINARY_CONFIGURED) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
+  });
+}
+
+/** Upload a buffer to Cloudinary and return the secure URL. */
+async function uploadToCloudinary(
+  buffer: Buffer,
+  originalName: string,
+  folder = "timcleverdate"
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const ext = path.extname(originalName).toLowerCase();
+    const resourceType: "image" | "video" | "auto" = ext === ".mp4" || ext === ".mov" || ext === ".webm"
+      ? "video"
+      : "image";
+
+    const stream = cloudinary.uploader.upload_stream(
+      { folder, resource_type: resourceType, transformation: [{ quality: "auto" }] },
+      (err, result) => {
+        if (err || !result) return reject(err || new Error("Cloudinary upload failed"));
+        resolve(result.secure_url);
+      }
+    );
+    stream.end(buffer);
+  });
+}
+
+// ── Multer — memory storage (used for Cloudinary) or disk fallback ────────────
 const uploadsDir = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+if (!CLOUDINARY_CONFIGURED && !fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 const diskStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDir),
@@ -44,7 +85,12 @@ const diskStorage = multer.diskStorage({
     cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
   },
 });
-const upload = multer({ storage: diskStorage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+const memStorage = multer.memoryStorage();
+const upload = multer({
+  storage: CLOUDINARY_CONFIGURED ? memStorage : diskStorage,
+  limits: { fileSize: 20 * 1024 * 1024 },  // 20 MB — Cloudinary handles compression
+});
 
 declare module "express-session" {
   interface SessionData {
@@ -632,11 +678,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const files = req.files as { [fieldname: string]: Express.Multer.File[] } || {};
 
         const updates: any = { ...validatedData };
-        // Store the public URL so the browser can fetch the image directly
-        if (files.primaryPhoto?.[0]) updates.profilePicture = `/uploads/${files.primaryPhoto[0].filename}`;
-        if (files.profileVideo?.[0]) updates.profileVideo = `/uploads/${files.profileVideo[0].filename}`;
-        if (files.additionalPhoto?.[0]) updates.additionalPicture1 = `/uploads/${files.additionalPhoto[0].filename}`;
-        if (files.additionalPhoto2?.[0]) updates.additionalPicture2 = `/uploads/${files.additionalPhoto2[0].filename}`;
+
+        // ── Resolve file URLs: Cloudinary (preferred) or local disk fallback ──
+        const resolveUrl = async (file: Express.Multer.File): Promise<string> => {
+          if (CLOUDINARY_CONFIGURED && file.buffer) {
+            return uploadToCloudinary(file.buffer, file.originalname);
+          }
+          return `/uploads/${file.filename}`;
+        };
+
+        if (files.primaryPhoto?.[0]) updates.profilePicture = await resolveUrl(files.primaryPhoto[0]);
+        if (files.profileVideo?.[0]) updates.profileVideo = await resolveUrl(files.profileVideo[0]);
+        if (files.additionalPhoto?.[0]) updates.additionalPicture1 = await resolveUrl(files.additionalPhoto[0]);
+        if (files.additionalPhoto2?.[0]) updates.additionalPicture2 = await resolveUrl(files.additionalPhoto2[0]);
 
         await storage.updateUser(user.id, updates);
 

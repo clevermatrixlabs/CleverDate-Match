@@ -1,9 +1,10 @@
-import { createContext, useContext, ReactNode } from 'react';
+import { createContext, useContext, ReactNode, useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { queryClient } from '@/lib/queryClient';
 import { MatchCandidate, Match, Message, User } from '@/types';
 import { useAuth } from './AuthContext';
+import { subscribeToMessages, sendFirebaseMessage, isFirebaseConfigured, FirebaseMessage } from '@/lib/firebase';
 
 interface MatchContextType {
   potentialMatches: MatchCandidate[];
@@ -71,9 +72,32 @@ export function MatchProvider({ children }: { children: ReactNode }) {
     enabled: !!currentMatch && !!otherUserId
   });
 
+  // ── Firebase real-time messages (falls back to REST API if not configured) ──
+  const [firebaseMessages, setFirebaseMessages] = useState<FirebaseMessage[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
+
+  useEffect(() => {
+    if (!currentMatch) {
+      setFirebaseMessages([]);
+      setIsLoadingMessages(false);
+      return;
+    }
+
+    if (isFirebaseConfigured()) {
+      setIsLoadingMessages(true);
+      const unsub = subscribeToMessages(currentMatch.id, (msgs) => {
+        setFirebaseMessages(msgs);
+        setIsLoadingMessages(false);
+      });
+      return unsub;
+    }
+
+    // Fallback: REST API polling via TanStack Query (handled below)
+    setIsLoadingMessages(false);
+  }, [currentMatch?.id]);
+
   const {
-    data: messages = [],
-    isLoading: isLoadingMessages
+    data: restMessages = [],
   } = useQuery<Message[]>({
     queryKey: ['/api/messages', currentMatch?.id],
     queryFn: async ({ queryKey }) => {
@@ -82,8 +106,22 @@ export function MatchProvider({ children }: { children: ReactNode }) {
       if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
       return res.json();
     },
-    enabled: !!currentMatch
+    enabled: !!currentMatch && !isFirebaseConfigured(),
+    refetchInterval: 4000,
   });
+
+  // Unified messages — prefer Firebase real-time, fall back to REST
+  const messages: Message[] = isFirebaseConfigured()
+    ? firebaseMessages.map((m) => ({
+        id: typeof m.id === 'string' ? parseInt(m.id, 36) || 0 : (m.id as unknown as number),
+        matchId: currentMatch?.id ?? 0,
+        senderId: m.senderId,
+        recipientId: 0,
+        content: m.content,
+        timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : String(m.timestamp),
+        isRead: true,
+      }))
+    : restMessages;
 
   const likeMutation = useMutation({
     mutationFn: async (userId: number) => {
@@ -107,10 +145,17 @@ export function MatchProvider({ children }: { children: ReactNode }) {
   const messageMutation = useMutation({
     mutationFn: async (content: string) => {
       if (!currentMatch) throw new Error('No active match');
+      // Try Firebase first; fall back to REST API
+      if (isFirebaseConfigured() && user) {
+        const ok = await sendFirebaseMessage(currentMatch.id, user.id, content);
+        if (ok) return;
+      }
       return apiRequest('POST', `/messages/${currentMatch.id}`, { content });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/messages', currentMatch?.id] });
+      if (!isFirebaseConfigured()) {
+        queryClient.invalidateQueries({ queryKey: ['/api/messages', currentMatch?.id] });
+      }
     }
   });
 

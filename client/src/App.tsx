@@ -13,6 +13,7 @@ import MatchPage from "@/pages/MatchPage";
 import MessagePage from "@/pages/MessagePage";
 import WalletPage from "@/pages/WalletPage";
 import ProfilePage from "@/pages/ProfilePage";
+import SettingsPage from "@/pages/SettingsPage";
 import AdminDashboardPage from "@/pages/AdminDashboardPage";
 import { AuthProvider } from "@/context/AuthContext";
 import { MatchProvider } from "@/context/MatchContext";
@@ -38,6 +39,7 @@ function Router() {
               <Route path="/messages" component={MessagePage} />
               <Route path="/wallet" component={WalletPage} />
               <Route path="/profile" component={ProfilePage} />
+              <Route path="/settings" component={SettingsPage} />
               <Route component={MatchPage} />
             </Switch>
           </Layout>
