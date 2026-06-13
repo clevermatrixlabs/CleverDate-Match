@@ -1340,8 +1340,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin route to add social media links (would be protected in a real app)
-  app.post("/api/socials", async (req, res) => {
+  // Admin route to add social media links
+  app.post("/api/socials", requireAdmin, async (req, res) => {
     try {
       const { platform, url } = req.body;
 
@@ -1613,6 +1613,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) {
       console.error("[card-error]", e?.message);
       res.status(500).json({ message: "Failed to report error" });
+    }
+  });
+
+  // ── Flutterwave account status (admin) ──────────────────────────────────────
+  app.get("/api/admin/flutterwave-status", requireAdmin, (_req, res) => {
+    const pubKey = process.env.VITE_FLUTTERWAVE_PUBLIC_KEY || "";
+    const secretKey = process.env.FLUTTERWAVE_SECRET_KEY || "";
+    const webhookSecret = process.env.FLUTTERWAVE_WEBHOOK_SECRET || "";
+
+    const mask = (key: string) =>
+      key.length > 12 ? key.slice(0, 8) + "•••••••••" + key.slice(-4) : key ? "••••••••" : "";
+
+    res.json({
+      configured: !!(pubKey && secretKey),
+      publicKeyMasked: mask(pubKey),
+      secretKeyMasked: mask(secretKey),
+      webhookConfigured: !!webhookSecret,
+      dashboardUrl: "https://dashboard.flutterwave.com",
+    });
+  });
+
+  // ── Admin: social media management ──────────────────────────────────────────
+  app.get("/api/admin/socials", requireAdmin, async (_req, res) => {
+    try {
+      const socials = await storage.getAllSocials();
+      res.json(socials);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch socials" });
+    }
+  });
+
+  app.delete("/api/admin/socials/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      await storage.deleteSocial(id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to delete social link" });
+    }
+  });
+
+  app.patch("/api/admin/socials/:id/toggle", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const { isActive } = req.body;
+      const updated = await storage.toggleSocial(id, !!isActive);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to toggle social link" });
     }
   });
 

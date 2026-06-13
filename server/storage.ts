@@ -80,6 +80,9 @@ export interface IStorage {
   // Social methods
   createSocial(social: InsertSocial): Promise<Social>;
   getSocials(): Promise<Social[]>;
+  getAllSocials(): Promise<Social[]>;
+  deleteSocial(id: number): Promise<void>;
+  toggleSocial(id: number, isActive: boolean): Promise<Social>;
 }
 
 // In-memory storage for testing and fallback
@@ -376,8 +379,23 @@ export class MemStorage implements IStorage {
   }
 
   async getSocials(): Promise<Social[]> {
-    return Array.from(this.socials.values())
-      .filter(social => social.isActive === true);
+    return Array.from(this.socials.values()).filter(s => s.isActive === true);
+  }
+
+  async getAllSocials(): Promise<Social[]> {
+    return Array.from(this.socials.values()).sort((a, b) => a.id - b.id);
+  }
+
+  async deleteSocial(id: number): Promise<void> {
+    this.socials.delete(id);
+  }
+
+  async toggleSocial(id: number, isActive: boolean): Promise<Social> {
+    const social = this.socials.get(id);
+    if (!social) throw new Error("Social not found");
+    const updated = { ...social, isActive };
+    this.socials.set(id, updated);
+    return updated;
   }
 }
 
@@ -731,11 +749,27 @@ export class DrizzleStorage implements IStorage {
 
   async getSocials(): Promise<Social[]> {
     if (!db) return [];
-    const results = await withRetry(() => db
-      .select()
-      .from(schema.socials)
-      .where(eq(schema.socials.isActive, true)));
+    const results = await withRetry(() => db.select().from(schema.socials).where(eq(schema.socials.isActive, true)));
     return results;
+  }
+
+  async getAllSocials(): Promise<Social[]> {
+    if (!db) return [];
+    return withRetry(() => db.select().from(schema.socials).orderBy(schema.socials.id));
+  }
+
+  async deleteSocial(id: number): Promise<void> {
+    if (!db) throw new Error("Database not available");
+    await withRetry(() => db.delete(schema.socials).where(eq(schema.socials.id, id)));
+  }
+
+  async toggleSocial(id: number, isActive: boolean): Promise<Social> {
+    if (!db) throw new Error("Database not available");
+    const results = await withRetry(() =>
+      db.update(schema.socials).set({ isActive }).where(eq(schema.socials.id, id)).returning()
+    );
+    if (!results[0]) throw new Error("Social not found");
+    return results[0];
   }
 }
 

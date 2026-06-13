@@ -29,7 +29,17 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Gift } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import {
+  Gift,
+  CreditCard,
+  CheckCircle2,
+  XCircle,
+  ExternalLink,
+  Share2,
+  Trash2,
+  Plus,
+} from 'lucide-react';
 
 type AdminStats = {
   users: number;
@@ -58,15 +68,53 @@ type AdminUser = {
   createdAt: string;
 };
 
+type FlutterwaveStatus = {
+  configured: boolean;
+  publicKeyMasked: string;
+  secretKeyMasked: string;
+  webhookConfigured: boolean;
+  dashboardUrl: string;
+};
+
+type SocialLink = {
+  id: number;
+  platform: string;
+  url: string;
+  isActive: boolean | null;
+  createdAt: string | null;
+};
+
+const PLATFORM_ICONS: Record<string, string> = {
+  instagram: 'ri-instagram-line',
+  twitter: 'ri-twitter-x-line',
+  facebook: 'ri-facebook-circle-line',
+  youtube: 'ri-youtube-line',
+  tiktok: 'ri-tiktok-line',
+  whatsapp: 'ri-whatsapp-line',
+  telegram: 'ri-telegram-line',
+  linkedin: 'ri-linkedin-box-line',
+  snapchat: 'ri-snapchat-line',
+  website: 'ri-global-line',
+};
+
+const PLATFORM_OPTIONS = [
+  'instagram', 'twitter', 'facebook', 'youtube',
+  'tiktok', 'whatsapp', 'telegram', 'linkedin', 'snapchat', 'website',
+];
+
 export default function AdminDashboardPage() {
   const { user, isLoading: authLoading } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  // Gift subscription form state
+  // Gift subscription form
   const [giftUserId, setGiftUserId] = useState('');
   const [giftTier, setGiftTier] = useState('basic');
   const [giftDays, setGiftDays] = useState('30');
+
+  // Social media form
+  const [newPlatform, setNewPlatform] = useState('instagram');
+  const [newUrl, setNewUrl] = useState('');
 
   // Guard: only admins
   useEffect(() => {
@@ -75,9 +123,11 @@ export default function AdminDashboardPage() {
     }
   }, [authLoading, user, navigate]);
 
+  const isAdmin = !!user && (user as any).isAdmin;
+
   const statsQuery = useQuery<AdminStats>({
     queryKey: ['/api/admin/stats'],
-    enabled: !!user && (user as any).isAdmin,
+    enabled: isAdmin,
     queryFn: async () => {
       const res = await fetch('/api/admin/stats', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch stats');
@@ -87,13 +137,35 @@ export default function AdminDashboardPage() {
 
   const usersQuery = useQuery<AdminUser[]>({
     queryKey: ['/api/admin/users'],
-    enabled: !!user && (user as any).isAdmin,
+    enabled: isAdmin,
     queryFn: async () => {
       const res = await fetch('/api/admin/users', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch users');
       return res.json();
     },
   });
+
+  const flwQuery = useQuery<FlutterwaveStatus>({
+    queryKey: ['/api/admin/flutterwave-status'],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const res = await fetch('/api/admin/flutterwave-status', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+  });
+
+  const socialsQuery = useQuery<SocialLink[]>({
+    queryKey: ['/api/admin/socials'],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const res = await fetch('/api/admin/socials', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+  });
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
 
   const suspendMutation = useMutation({
     mutationFn: async ({ id, suspend, reason }: { id: number; suspend: boolean; reason?: string }) => {
@@ -105,19 +177,17 @@ export default function AdminDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
       toast({ title: 'User updated' });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed', description: e?.message || 'Try again' }),
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed', description: e?.message }),
   });
 
   const verifyMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return await apiRequest('POST', `/api/admin/users/${id}/verify`, {});
-    },
+    mutationFn: async (id: number) => apiRequest('POST', `/api/admin/users/${id}/verify`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
       toast({ title: 'User manually verified' });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed', description: e?.message || 'Try again' }),
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed', description: e?.message }),
   });
 
   const giftMutation = useMutation({
@@ -126,31 +196,59 @@ export default function AdminDashboardPage() {
     onSuccess: (_data: any, vars) => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
-      toast({ title: 'Subscription gifted!', description: `${vars.tier} plan given to user #${vars.userId} for ${vars.days} days.` });
+      toast({ title: 'Subscription gifted!', description: `${vars.tier} given to user #${vars.userId} for ${vars.days} days.` });
       setGiftUserId('');
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Gift failed', description: e?.message || 'Try again' }),
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Gift failed', description: e?.message }),
+  });
+
+  const addSocialMutation = useMutation({
+    mutationFn: async ({ platform, url }: { platform: string; url: string }) =>
+      apiRequest('POST', '/api/socials', { platform, url, isActive: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/socials'] });
+      toast({ title: 'Social link added' });
+      setNewUrl('');
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed to add', description: e?.message }),
+  });
+
+  const deleteSocialMutation = useMutation({
+    mutationFn: async (id: number) => apiRequest('DELETE', `/api/admin/socials/${id}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/socials'] });
+      toast({ title: 'Social link removed' });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed to delete', description: e?.message }),
+  });
+
+  const toggleSocialMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) =>
+      apiRequest('PATCH', `/api/admin/socials/${id}/toggle`, { isActive }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/socials'] });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed to toggle', description: e?.message }),
   });
 
   const handleGift = () => {
     const uid = parseInt(giftUserId, 10);
     const d = parseInt(giftDays, 10);
-    if (isNaN(uid) || uid <= 0) {
-      toast({ variant: 'destructive', title: 'Invalid user ID' });
-      return;
-    }
-    if (isNaN(d) || d <= 0 || d > 3650) {
-      toast({ variant: 'destructive', title: 'Days must be between 1 and 3650' });
-      return;
-    }
+    if (isNaN(uid) || uid <= 0) { toast({ variant: 'destructive', title: 'Invalid user ID' }); return; }
+    if (isNaN(d) || d <= 0 || d > 3650) { toast({ variant: 'destructive', title: 'Days must be 1–3650' }); return; }
     giftMutation.mutate({ userId: uid, tier: giftTier, days: d });
+  };
+
+  const handleAddSocial = () => {
+    if (!newUrl.trim()) { toast({ variant: 'destructive', title: 'URL is required' }); return; }
+    addSocialMutation.mutate({ platform: newPlatform, url: newUrl.trim() });
   };
 
   if (authLoading || !user || !(user as any).isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-gray-500 text-sm">Checking access...</p>
         </div>
       </div>
@@ -159,6 +257,8 @@ export default function AdminDashboardPage() {
 
   const stats = statsQuery.data;
   const users = usersQuery.data || [];
+  const flw = flwQuery.data;
+  const socials = socialsQuery.data || [];
 
   const statCards = [
     { label: 'Total accounts', value: stats?.users ?? '–', color: 'bg-blue-50 text-blue-700', icon: 'ri-user-line' },
@@ -171,34 +271,31 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Header */}
       <header className="bg-gradient-to-r from-primary to-primary/90 text-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <i className="ri-shield-star-line text-2xl"></i>
+            <i className="ri-shield-star-line text-2xl" />
             <div>
               <h1 className="font-poppins font-bold text-lg">Owner Dashboard</h1>
               <p className="text-xs text-white/80">Tim Clever Date — admin view</p>
             </div>
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => navigate('/app/')}
-            data-testid="button-back-to-app"
-          >
+          <Button variant="secondary" size="sm" onClick={() => navigate('/app/')}>
             Back to app
           </Button>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Stats grid */}
+
+        {/* ── Stats grid ───────────────────────────────────── */}
         <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {statCards.map((s) => (
             <Card key={s.label}>
               <CardContent className="p-4">
                 <div className={`w-10 h-10 rounded-lg ${s.color} flex items-center justify-center mb-2`}>
-                  <i className={`${s.icon} text-xl`}></i>
+                  <i className={`${s.icon} text-xl`} />
                 </div>
                 <p className="text-2xl font-bold text-gray-900">{s.value}</p>
                 <p className="text-xs text-gray-500">{s.label}</p>
@@ -207,7 +304,184 @@ export default function AdminDashboardPage() {
           ))}
         </section>
 
-        {/* Gift subscription section */}
+        {/* ── Flutterwave account status ────────────────────── */}
+        <Card className="border-green-200 bg-green-50/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-green-800">
+              <CreditCard className="h-5 w-5" />
+              Flutterwave payment account
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {flwQuery.isLoading ? (
+              <p className="text-sm text-gray-500">Loading...</p>
+            ) : (
+              <div className="space-y-4">
+                {/* Connection status */}
+                <div className="flex items-center gap-3">
+                  {flw?.configured ? (
+                    <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+                  )}
+                  <div>
+                    <p className={`font-semibold text-sm ${flw?.configured ? 'text-green-700' : 'text-red-700'}`}>
+                      {flw?.configured ? 'Connected — payments are live' : 'Not connected — payments are disabled'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      All payments go directly to your Flutterwave account
+                    </p>
+                  </div>
+                </div>
+
+                {/* Key status rows */}
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div className="bg-white border rounded-xl p-3">
+                    <p className="text-xs font-medium text-gray-500 mb-1">Public Key</p>
+                    <p className="font-mono text-sm text-gray-800 truncate">
+                      {flw?.publicKeyMasked || <span className="text-red-400 italic">Not set</span>}
+                    </p>
+                  </div>
+                  <div className="bg-white border rounded-xl p-3">
+                    <p className="text-xs font-medium text-gray-500 mb-1">Secret Key</p>
+                    <p className="font-mono text-sm text-gray-800 truncate">
+                      {flw?.secretKeyMasked || <span className="text-red-400 italic">Not set</span>}
+                    </p>
+                  </div>
+                  <div className="bg-white border rounded-xl p-3">
+                    <p className="text-xs font-medium text-gray-500 mb-1">Webhook Secret</p>
+                    <p className="text-sm">
+                      {flw?.webhookConfigured
+                        ? <span className="text-green-600 font-medium">✓ Configured</span>
+                        : <span className="text-amber-500 italic">Optional — not set</span>}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Setup instructions */}
+                {!flw?.configured && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+                    <p className="font-semibold mb-2">How to connect your Flutterwave account:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-amber-700">
+                      <li>Log in to your Flutterwave dashboard (link below)</li>
+                      <li>Go to <strong>Settings → API Keys</strong></li>
+                      <li>Copy your <strong>Public Key</strong> and <strong>Secret Key</strong></li>
+                      <li>Open the <strong>Replit Secrets panel</strong> (🔒 icon) and add:</li>
+                    </ol>
+                    <div className="mt-3 bg-amber-100 rounded-lg p-3 font-mono text-xs space-y-1">
+                      <div><span className="text-amber-900">VITE_FLUTTERWAVE_PUBLIC_KEY</span> = FLWPUBK-xxx...</div>
+                      <div><span className="text-amber-900">FLUTTERWAVE_SECRET_KEY</span> = FLWSECK-xxx...</div>
+                    </div>
+                  </div>
+                )}
+
+                <a
+                  href={flw?.dashboardUrl || 'https://dashboard.flutterwave.com'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-green-700 hover:text-green-800 font-medium"
+                >
+                  Open Flutterwave Dashboard <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Social media manager ──────────────────────────── */}
+        <Card className="border-blue-200 bg-blue-50/20">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-blue-800">
+              <Share2 className="h-5 w-5" />
+              Social media accounts
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-gray-600">
+              These links appear in the app footer and profile pages. Toggle to show or hide each one.
+            </p>
+
+            {/* Add new */}
+            <div className="grid sm:grid-cols-3 gap-3 items-end bg-white border rounded-xl p-4">
+              <div className="space-y-1">
+                <Label>Platform</Label>
+                <Select value={newPlatform} onValueChange={setNewPlatform}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PLATFORM_OPTIONS.map((p) => (
+                      <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1 sm:col-span-1">
+                <Label>Profile URL</Label>
+                <Input
+                  placeholder="https://instagram.com/yourpage"
+                  value={newUrl}
+                  onChange={(e) => setNewUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddSocial(); }}
+                />
+              </div>
+              <Button
+                onClick={handleAddSocial}
+                disabled={addSocialMutation.isPending || !newUrl.trim()}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add link
+              </Button>
+            </div>
+
+            {/* Current links */}
+            {socialsQuery.isLoading ? (
+              <p className="text-sm text-gray-500 py-4 text-center">Loading...</p>
+            ) : socials.length === 0 ? (
+              <p className="text-sm text-gray-500 py-4 text-center">No social links yet. Add one above.</p>
+            ) : (
+              <div className="space-y-2">
+                {socials.map((s) => (
+                  <div key={s.id} className="flex items-center gap-3 bg-white border rounded-xl px-4 py-3">
+                    <i className={`${PLATFORM_ICONS[s.platform] ?? 'ri-global-line'} text-xl text-gray-600`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium capitalize text-gray-800">{s.platform}</p>
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline truncate block max-w-xs"
+                      >
+                        {s.url}
+                      </a>
+                    </div>
+                    <Switch
+                      checked={!!s.isActive}
+                      onCheckedChange={(checked) => toggleSocialMutation.mutate({ id: s.id, isActive: checked })}
+                      title={s.isActive ? 'Visible in app' : 'Hidden'}
+                    />
+                    <Badge variant={s.isActive ? 'default' : 'secondary'} className="text-xs w-14 justify-center">
+                      {s.isActive ? 'Live' : 'Hidden'}
+                    </Badge>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-red-400 hover:text-red-600 hover:bg-red-50"
+                      onClick={() => {
+                        if (confirm(`Remove ${s.platform} link?`)) deleteSocialMutation.mutate(s.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Gift subscription ─────────────────────────────── */}
         <Card className="border-purple-200 bg-purple-50/40">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-purple-700">
@@ -264,16 +538,16 @@ export default function AdminDashboardPage() {
               </Button>
             </div>
             <p className="text-xs text-gray-500 mt-3">
-              Tip: find the user ID in the accounts table below, then enter it above.
+              Tip: click the "Gift" button next to any user in the table below to pre-fill the ID.
             </p>
           </CardContent>
         </Card>
 
-        {/* Users table */}
+        {/* ── Users table ───────────────────────────────────── */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <i className="ri-group-line"></i>
+              <i className="ri-group-line" />
               All accounts
             </CardTitle>
           </CardHeader>
@@ -297,7 +571,7 @@ export default function AdminDashboardPage() {
                 </TableHeader>
                 <TableBody>
                   {users.map((u) => (
-                    <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
+                    <TableRow key={u.id}>
                       <TableCell className="font-mono text-xs">{u.id}</TableCell>
                       <TableCell className="text-sm">
                         <div>{u.email || '—'}</div>
@@ -307,28 +581,31 @@ export default function AdminDashboardPage() {
                         {(u.firstName || u.lastName)
                           ? `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim()
                           : <span className="text-gray-400">No profile</span>}
-                        {u.gender && <div className="text-xs text-gray-500">{u.gender}{u.age ? `, ${u.age}` : ''}</div>}
+                        {u.gender && (
+                          <div className="text-xs text-gray-500">
+                            {u.gender}{u.age ? `, ${u.age}` : ''}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm">{u.country || '—'}</TableCell>
                       <TableCell className="space-y-1">
-                        {u.isAdmin && <Badge variant="default" className="bg-purple-600">Admin</Badge>}
+                        {u.isAdmin && <Badge className="bg-purple-600">Admin</Badge>}
                         {u.isSuspended ? (
                           <Badge variant="destructive">Suspended</Badge>
                         ) : u.isVerified ? (
-                          <Badge variant="default" className="bg-green-600">Verified</Badge>
+                          <Badge className="bg-green-600">Verified</Badge>
                         ) : (
                           <Badge variant="secondary">Pending</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-sm capitalize">{u.subscriptionTier}</TableCell>
-                      <TableCell className="text-right space-x-2 whitespace-nowrap">
+                      <TableCell className="text-right space-x-1 whitespace-nowrap">
                         {!u.isVerified && !u.isAdmin && (
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => verifyMutation.mutate(u.id)}
                             disabled={verifyMutation.isPending}
-                            data-testid={`button-verify-${u.id}`}
                           >
                             Verify
                           </Button>
@@ -337,8 +614,10 @@ export default function AdminDashboardPage() {
                           size="sm"
                           variant="outline"
                           className="text-purple-600 border-purple-300 hover:bg-purple-50"
-                          onClick={() => { setGiftUserId(String(u.id)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                          title="Gift subscription"
+                          onClick={() => {
+                            setGiftUserId(String(u.id));
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
                         >
                           Gift
                         </Button>
@@ -349,7 +628,6 @@ export default function AdminDashboardPage() {
                               variant="outline"
                               onClick={() => suspendMutation.mutate({ id: u.id, suspend: false })}
                               disabled={suspendMutation.isPending}
-                              data-testid={`button-unsuspend-${u.id}`}
                             >
                               Unsuspend
                             </Button>
@@ -359,12 +637,9 @@ export default function AdminDashboardPage() {
                               variant="destructive"
                               onClick={() => {
                                 const reason = window.prompt('Reason for suspension?', 'Violated community guidelines');
-                                if (reason !== null) {
-                                  suspendMutation.mutate({ id: u.id, suspend: true, reason });
-                                }
+                                if (reason !== null) suspendMutation.mutate({ id: u.id, suspend: true, reason });
                               }}
                               disabled={suspendMutation.isPending}
-                              data-testid={`button-suspend-${u.id}`}
                             >
                               Suspend
                             </Button>
