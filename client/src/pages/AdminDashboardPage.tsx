@@ -279,7 +279,7 @@ export default function AdminDashboardPage() {
             <i className="ri-shield-star-line text-2xl" />
             <div>
               <h1 className="font-poppins font-bold text-lg">Owner Dashboard</h1>
-              <p className="text-xs text-white/80">Tim Clever Date — admin view</p>
+              <p className="text-xs text-white/80">Clever Date Match — admin view</p>
             </div>
           </div>
           <div className="flex items-center gap-2">

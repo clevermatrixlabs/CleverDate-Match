@@ -24,7 +24,7 @@ function ProfileGate({ missingFields, requiresVerification }: { missingFields?: 
         </div>
         <h2 className="font-poppins font-bold text-xl text-gray-800 mb-2">Verification Required</h2>
         <p className="text-gray-500 text-sm mb-6 max-w-xs">
-          You need to complete face &amp; ID verification before you can start matching. This keeps Tim Clever Date safe for everyone.
+          You need to complete face &amp; ID verification before you can start matching. This keeps Clever Date Match safe for everyone.
         </p>
         <button
           onClick={() => navigate('/verify')}

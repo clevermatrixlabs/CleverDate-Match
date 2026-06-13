@@ -60,7 +60,7 @@ export default function VerificationPage() {
   const verificationMutation = useMutation({
     mutationFn: async (payload: any) => apiRequest('POST', '/verification', payload),
     onSuccess: async () => {
-      toast({ title: 'Verification successful', description: 'Welcome to Tim Clever Date!' });
+      toast({ title: 'Verification successful', description: 'Welcome to Clever Date Match!' });
       streamRef.current?.getTracks().forEach((t) => t.stop());
       await queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
       setStep('done');

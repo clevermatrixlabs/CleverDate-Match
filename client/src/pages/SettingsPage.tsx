@@ -256,7 +256,7 @@ export default function SettingsPage() {
         </Card>
 
         <p className="text-center text-xs text-gray-400 pb-6">
-          Tim Clever Date · Your data is protected and never sold.
+          Clever Date Match · Your data is protected and never sold.
         </p>
       </div>
     </div>

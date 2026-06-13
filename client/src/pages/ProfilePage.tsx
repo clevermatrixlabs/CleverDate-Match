@@ -157,17 +157,17 @@ export default function ProfilePage() {
           <div className="mb-6">
             <h3 className="font-semibold text-gray-800 mb-2">Follow Our Founder</h3>
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex flex-wrap gap-2">
-              <a href="https://instagram.com/timcleverdate" target="_blank" rel="noopener noreferrer"
+              <a href="https://instagram.com/cleverdatematch" target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 hover:bg-gray-50 transition-colors">
                 <Instagram className="w-4 h-4 text-pink-500" />
                 <span className="text-sm text-gray-700">Instagram</span>
               </a>
-              <a href="https://twitter.com/timcleverdate" target="_blank" rel="noopener noreferrer"
+              <a href="https://twitter.com/cleverdatematch" target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 hover:bg-gray-50 transition-colors">
                 <Twitter className="w-4 h-4 text-sky-500" />
                 <span className="text-sm text-gray-700">Twitter</span>
               </a>
-              <a href="https://youtube.com/c/timcleverdate" target="_blank" rel="noopener noreferrer"
+              <a href="https://youtube.com/c/cleverdatematch" target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 hover:bg-gray-50 transition-colors">
                 <Youtube className="w-4 h-4 text-red-500" />
                 <span className="text-sm text-gray-700">YouTube</span>

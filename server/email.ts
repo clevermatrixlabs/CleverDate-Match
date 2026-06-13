@@ -37,7 +37,7 @@ export async function sendVerificationCode(toEmail: string, code: string, firstN
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(15,30,80,0.08);">
           <tr>
             <td style="background:linear-gradient(135deg,#1a237e,#1565c0);padding:32px 24px;text-align:center;color:#ffffff;">
-              <div style="font-size:24px;font-weight:700;letter-spacing:-0.5px;">Tim Clever Date</div>
+              <div style="font-size:24px;font-weight:700;letter-spacing:-0.5px;">Clever Date Match</div>
               <div style="font-size:14px;opacity:0.85;margin-top:4px;">One match. One real person.</div>
             </td>
           </tr>
@@ -57,7 +57,7 @@ export async function sendVerificationCode(toEmail: string, code: string, firstN
           </tr>
           <tr>
             <td style="padding:16px 28px 28px 28px;text-align:center;color:#94a3b8;font-size:12px;">
-              © Tim Clever Date · Verified profiles only
+              © Clever Date Match · Verified profiles only
             </td>
           </tr>
         </table>
@@ -66,13 +66,13 @@ export async function sendVerificationCode(toEmail: string, code: string, firstN
   </body>
 </html>`.trim();
 
-  const text = `${greeting}\n\nYour Tim Clever Date verification code is: ${code}\n\nThis code expires in 10 minutes. If you didn't request it, ignore this email.\n\n— Tim Clever Date`;
+  const text = `${greeting}\n\nYour Clever Date Match verification code is: ${code}\n\nThis code expires in 10 minutes. If you didn't request it, ignore this email.\n\n— Clever Date Match`;
 
   try {
     await transporter.sendMail({
-      from: `"Tim Clever Date" <${GMAIL_USER}>`,
+      from: `"Clever Date Match" <${GMAIL_USER}>`,
       to: toEmail,
-      subject: `Your Tim Clever Date verification code: ${code}`,
+      subject: `Your Clever Date Match verification code: ${code}`,
       text,
       html,
     });
@@ -103,17 +103,17 @@ export async function sendAdminNotification(subject: string, body: string): Prom
 <!doctype html><html><body style="font-family:-apple-system,sans-serif;background:#f6f8fb;padding:32px 16px;">
   <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.08);">
     <div style="background:linear-gradient(135deg,#1a237e,#1565c0);padding:24px;color:#fff;">
-      <strong style="font-size:18px;">Tim Clever Date — Admin Alert</strong>
+      <strong style="font-size:18px;">Clever Date Match — Admin Alert</strong>
     </div>
     <div style="padding:24px;color:#1a2236;white-space:pre-wrap;line-height:1.6;">${body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-    <div style="padding:12px 24px 20px;font-size:12px;color:#94a3b8;">Sent automatically by Tim Clever Date platform</div>
+    <div style="padding:12px 24px 20px;font-size:12px;color:#94a3b8;">Sent automatically by Clever Date Match platform</div>
   </div>
 </body></html>`.trim();
   try {
     await transporter.sendMail({
-      from: `"Tim Clever Date" <${GMAIL_USER}>`,
+      from: `"Clever Date Match" <${GMAIL_USER}>`,
       to: adminEmail,
-      subject: `[Tim Clever Date Admin] ${subject}`,
+      subject: `[Clever Date Match Admin] ${subject}`,
       text: body,
       html,
     });

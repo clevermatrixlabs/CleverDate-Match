@@ -582,7 +582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             rejectedReason: `Duplicate face detected — already verified as user #${other.id}`,
           });
           return res.status(400).json({
-            message: "This face is already registered to another account. Each person may only have one account on Tim Clever Date.",
+            message: "This face is already registered to another account. Each person may only have one account on Clever Date Match.",
           });
         }
       }
@@ -1704,7 +1704,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = req.user as any;
       const ls = await storage.createLivestream({
         hostId: user.id,
-        title: title || "Tim's Live 🔴",
+        title: title || "Clever Date Match Live 🔴",
         status: "live",
         viewerCount: 0,
         likeCount: 0,

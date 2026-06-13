@@ -117,17 +117,17 @@ export class MemStorage implements IStorage {
     // Initialize with some sample socials for the app owner
     this.createSocial({
       platform: "instagram",
-      url: "https://instagram.com/timcleverdate",
+      url: "https://instagram.com/cleverdatematch",
       isActive: true
     });
     this.createSocial({
       platform: "twitter",
-      url: "https://twitter.com/timcleverdate",
+      url: "https://twitter.com/cleverdatematch",
       isActive: true
     });
     this.createSocial({
       platform: "youtube",
-      url: "https://youtube.com/c/timcleverdate",
+      url: "https://youtube.com/c/cleverdatematch",
       isActive: true
     });
   }
@@ -881,9 +881,9 @@ export async function initStorage(): Promise<void> {
       try {
         const socials = await storage.getSocials();
         if (socials.length === 0) {
-          await storage.createSocial({ platform: "instagram", url: "https://instagram.com/timcleverdate", isActive: true });
-          await storage.createSocial({ platform: "twitter", url: "https://twitter.com/timcleverdate", isActive: true });
-          await storage.createSocial({ platform: "youtube", url: "https://youtube.com/c/timcleverdate", isActive: true });
+          await storage.createSocial({ platform: "instagram", url: "https://instagram.com/cleverdatematch", isActive: true });
+          await storage.createSocial({ platform: "twitter", url: "https://twitter.com/cleverdatematch", isActive: true });
+          await storage.createSocial({ platform: "youtube", url: "https://youtube.com/c/cleverdatematch", isActive: true });
           console.log("Social media links initialized");
         }
       } catch (e) {

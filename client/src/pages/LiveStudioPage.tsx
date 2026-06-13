@@ -30,7 +30,7 @@ export default function LiveStudioPage() {
 
   const [isLive, setIsLive] = useState(false);
   const [liveId, setLiveId] = useState<number | null>(null);
-  const [streamTitle, setStreamTitle] = useState("Tim's Live 🔴");
+  const [streamTitle, setStreamTitle] = useState("Clever Date Match Live 🔴");
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [viewers, setViewers] = useState<Viewer[]>([]);
@@ -191,7 +191,7 @@ export default function LiveStudioPage() {
           <Radio className="h-5 w-5 text-white animate-pulse" />
           <div>
             <h1 className="font-bold text-base">Live Studio</h1>
-            <p className="text-xs text-white/70">Tim Clever Date</p>
+            <p className="text-xs text-white/70">Clever Date Match</p>
           </div>
         </div>
         {isLive && (

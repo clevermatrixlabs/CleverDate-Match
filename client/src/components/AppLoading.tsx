@@ -1,77 +1,78 @@
 import { useEffect, useState } from 'react';
-import { Progress } from '@/components/ui/progress';
+
+const quotes = [
+  "Where real love begins...",
+  "One match. One story.",
+  "Verified love awaits.",
+  "Your journey starts here.",
+];
 
 export function AppLoading() {
-  const [progress, setProgress] = useState(0);
-  
+  const [quote, setQuote] = useState(quotes[0]);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setProgress(100);
-    }, 1500);
-    
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 4;
-      });
-    }, 50);
-    
-    return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
-    };
+    const i = Math.floor(Math.random() * quotes.length);
+    setQuote(quotes[i]);
   }, []);
-  
+
   return (
-    <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
-      <div className="w-32 h-32 mb-8 relative">
-        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-primary to-primary-light shadow-lg flex items-center justify-center">
-          <svg 
-            width="60" 
-            height="60" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            xmlns="http://www.w3.org/2000/svg"
-            className="text-white"
-          >
-            <path 
-              d="M14 9.01V9M14 12.01V12M14 15.01V15M9 15.01V15M9 12.01V12M9 9.01V9M7 19H17C18.1046 19 19 18.1046 19 17V7C19 5.89543 18.1046 5 17 5H7C5.89543 5 5 5.89543 5 7V17C5 18.1046 5.89543 19 7 19Z" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              strokeLinecap="round"
-            />
-            <path 
-              d="M12 19V21" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              strokeLinecap="round"
-            />
-            <path 
-              d="M12 3V5" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              strokeLinecap="round"
-            />
-          </svg>
+    <div
+      className="fixed inset-0 flex flex-col items-center justify-center"
+      style={{ background: 'linear-gradient(170deg, #040810 0%, #0a0f1e 35%, #0d1535 100%)' }}
+    >
+      <div style={{
+        position:'absolute', top:'35%', left:'50%', transform:'translate(-50%,-50%)',
+        width:300, height:300,
+        background:'radial-gradient(circle, rgba(21,101,192,0.2) 0%, transparent 70%)',
+        borderRadius:'50%',
+        pointerEvents:'none',
+      }} />
+
+      <div style={{ textAlign:'center', position:'relative', zIndex:1 }}>
+        <div style={{ lineHeight:1, marginBottom:4 }}>
+          <span style={{
+            fontFamily:"'Georgia','Times New Roman',serif",
+            fontSize:'clamp(72px,18vw,110px)',
+            fontWeight:900,
+            fontStyle:'italic',
+            background:'linear-gradient(135deg,#ffd700 0%,#ff9500 40%,#ffec6e 70%,#ffd700 100%)',
+            backgroundSize:'200% auto',
+            WebkitBackgroundClip:'text',
+            WebkitTextFillColor:'transparent',
+            backgroundClip:'text',
+            display:'inline-block',
+            filter:'drop-shadow(0 0 30px rgba(255,200,50,0.5))',
+          }}>C</span>
         </div>
+        <div style={{ marginTop:-8, marginBottom:24 }}>
+          <span style={{
+            fontFamily:"'Georgia','Times New Roman',serif",
+            fontSize:'clamp(16px,4vw,24px)',
+            fontWeight:700,
+            fontStyle:'italic',
+            letterSpacing:'0.1em',
+            color:'rgba(255,255,255,0.75)',
+            textTransform:'uppercase',
+            display:'block',
+          }}>LEVER DATE MATCH</span>
+        </div>
+
+        <div style={{ display:'flex', gap:8, justifyContent:'center', marginBottom:20 }}>
+          {[0,1,2].map(i => (
+            <div key={i} style={{
+              width:8, height:8, borderRadius:'50%',
+              background:'rgba(255,200,70,0.7)',
+              animation:`bounce 1.2s ease-in-out ${i*0.2}s infinite`,
+            }} />
+          ))}
+        </div>
+
+        <p style={{ color:'rgba(255,255,255,0.35)', fontSize:13, letterSpacing:'0.1em', textTransform:'uppercase' }}>
+          {quote}
+        </p>
       </div>
-      
-      <h1 className="text-2xl font-bold text-primary mb-2">Tim Clever Date</h1>
-      <p className="text-gray-500 mb-6">Meaningful Connections</p>
-      
-      <div className="w-64 mb-4">
-        <Progress value={progress} className="h-2" />
-      </div>
-      
-      <p className="text-xs text-gray-400">
-        {progress < 30 ? "Loading resources..." : 
-         progress < 60 ? "Preparing your experience..." : 
-         progress < 90 ? "Almost ready..." : 
-         "Welcome to Tim Clever Date!"}
-      </p>
+
+      <style>{`@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}`}</style>
     </div>
   );
 }

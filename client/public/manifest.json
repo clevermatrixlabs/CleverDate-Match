@@ -1,6 +1,6 @@
 {
-  "short_name": "Tim Clever Date",
-  "name": "Tim Clever Date - One Match at a Time",
+  "short_name": "Clever Date Match",
+  "name": "Clever Date Match - One Match at a Time",
   "icons": [
     {
       "src": "favicon.ico",
@@ -20,7 +20,7 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#1a365d",
-  "background_color": "#f7fafc",
-  "description": "A premium dating app focused on quality matches and security"
+  "theme_color": "#040810",
+  "background_color": "#040810",
+  "description": "A premium international dating app focused on quality matches and security"
 }

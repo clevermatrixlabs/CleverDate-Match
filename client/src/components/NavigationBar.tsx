@@ -1,6 +1,6 @@
 import { useAuth } from '@/context/AuthContext';
 import { Link, useLocation } from 'wouter';
-import { Heart, ShieldCheck, Settings, Radio } from 'lucide-react';
+import { ShieldCheck, Settings, Radio } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 export default function NavigationBar() {
@@ -8,7 +8,6 @@ export default function NavigationBar() {
   const [, navigate] = useLocation();
   const isAdmin = !!(user as any)?.isAdmin;
 
-  // Poll for active livestream every 30s
   const liveQuery = useQuery<{ id: number; title: string } | null>({
     queryKey: ['/api/live/current'],
     staleTime: 1000 * 30,
@@ -23,15 +22,27 @@ export default function NavigationBar() {
   const isLive = !!liveQuery.data;
 
   return (
-    <nav className="bg-gradient-to-r from-primary to-primary/90 text-white shadow-md">
+    <nav style={{ background: 'linear-gradient(135deg, #040810 0%, #0a0f2e 100%)' }} className="text-white shadow-lg border-b border-white/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center gap-3">
-            <div className="flex-shrink-0 flex items-center">
-              <Heart className="w-6 h-6 mr-2 fill-white text-white" />
-              <h1 className="text-white font-poppins font-bold text-xl">Tim Clever Date</h1>
-            </div>
-            {/* LIVE badge — shown to all users when admin is streaming */}
+            {/* Cinematic logo */}
+            <Link href="~/app/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
+              <span style={{
+                fontFamily: "'Georgia','Times New Roman',serif",
+                fontSize: 22,
+                fontWeight: 900,
+                fontStyle: 'italic',
+                background: 'linear-gradient(135deg, #ffd700 0%, #ff9500 50%, #ffec6e 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+                letterSpacing: '0.02em',
+              }}>
+                CLEVER DATE MATCH
+              </span>
+            </Link>
+            {/* LIVE badge */}
             {isLive && (
               <Link
                 href="~/app/live"
@@ -46,7 +57,7 @@ export default function NavigationBar() {
             {isAdmin && (
               <Link
                 href="~/admin"
-                className="flex items-center gap-1 rounded-full px-3 py-1.5 bg-white/20 text-white hover:bg-white/30 transition-colors text-sm font-medium"
+                className="flex items-center gap-1 rounded-full px-3 py-1.5 bg-white/10 text-white hover:bg-white/20 transition-colors text-sm font-medium border border-white/20"
                 data-testid="link-admin-dashboard"
               >
                 <ShieldCheck className="w-4 h-4" />
@@ -56,7 +67,7 @@ export default function NavigationBar() {
             {user && (
               <button
                 onClick={() => navigate('~/app/profile')}
-                className="rounded-full p-1.5 bg-white/20 text-white hover:bg-white/30 focus:outline-none transition-colors"
+                className="rounded-full p-1.5 bg-white/10 text-white hover:bg-white/20 focus:outline-none transition-colors border border-white/20"
                 title="Profile & Settings"
               >
                 <Settings className="w-5 h-5" />

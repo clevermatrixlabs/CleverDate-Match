@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Mail, Phone, Eye, EyeOff, ArrowLeft, Heart, ShieldCheck, Star, ChevronRight, Globe } from 'lucide-react';
+import { Mail, Phone, Eye, EyeOff, ArrowLeft, Globe } from 'lucide-react';
 import { SiGoogle } from 'react-icons/si';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { COUNTRIES, detectCountryFromIP } from '@/lib/countries';
@@ -48,6 +48,31 @@ const otpSchema = z.object({
   otp: z.string().length(6, 'Enter the 6-digit code'),
 });
 
+/* ─── Floating particle component ─── */
+function Particle({ style }: { style: React.CSSProperties }) {
+  return <div className="absolute rounded-full pointer-events-none" style={style} />;
+}
+
+function CinematicBg() {
+  const particles = [
+    { width: 6, height: 6, top: '12%', left: '8%', background: 'rgba(255,200,80,0.55)', filter: 'blur(1px)', animation: 'float1 7s ease-in-out infinite' },
+    { width: 10, height: 10, top: '22%', left: '78%', background: 'rgba(255,100,150,0.45)', filter: 'blur(2px)', animation: 'float2 9s ease-in-out infinite' },
+    { width: 4, height: 4, top: '55%', left: '15%', background: 'rgba(180,140,255,0.6)', filter: 'blur(1px)', animation: 'float3 6s ease-in-out infinite' },
+    { width: 8, height: 8, top: '70%', left: '85%', background: 'rgba(255,200,80,0.4)', filter: 'blur(2px)', animation: 'float1 8s ease-in-out infinite 1s' },
+    { width: 5, height: 5, top: '38%', left: '92%', background: 'rgba(100,200,255,0.5)', filter: 'blur(1px)', animation: 'float2 10s ease-in-out infinite 2s' },
+    { width: 14, height: 14, top: '80%', left: '30%', background: 'rgba(255,120,80,0.3)', filter: 'blur(3px)', animation: 'float3 12s ease-in-out infinite 0.5s' },
+    { width: 3, height: 3, top: '10%', left: '55%', background: 'rgba(255,255,255,0.7)', filter: 'blur(0.5px)', animation: 'float1 5s ease-in-out infinite 3s' },
+    { width: 7, height: 7, top: '45%', left: '45%', background: 'rgba(255,200,80,0.35)', filter: 'blur(2px)', animation: 'float2 11s ease-in-out infinite 1.5s' },
+  ];
+  return (
+    <>
+      {particles.map((p, i) => (
+        <Particle key={i} style={p} />
+      ))}
+    </>
+  );
+}
+
 export default function OnboardingPage() {
   const [screen, setScreen] = useState<Screen>('welcome');
   const [isLogin, setIsLogin] = useState(true);
@@ -59,7 +84,6 @@ export default function OnboardingPage() {
   const { loginWithEmail, loginWithPhone, registerWithEmail, registerWithPhone, sendOtp, verifyOtp } = useAuth();
   const { toast } = useToast();
 
-  // Auto-detect country from IP when the signup forms are first mounted
   useEffect(() => {
     detectCountryFromIP().then(code => {
       if (!code) return;
@@ -75,37 +99,27 @@ export default function OnboardingPage() {
   const otpForm = useForm({ resolver: zodResolver(otpSchema), defaultValues: { otp: '' } });
 
   const handleEmailLogin = async (data: z.infer<typeof emailLoginSchema>) => {
-    try {
-      await loginWithEmail(data.email, data.password);
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Login failed', description: e.message });
-    }
+    try { await loginWithEmail(data.email, data.password); }
+    catch (e: any) { toast({ variant: 'destructive', title: 'Login failed', description: e.message }); }
   };
 
   const handleEmailSignup = async (data: z.infer<typeof emailSignupSchema>) => {
     try {
       await registerWithEmail(data.email, data.password, data.country);
-      toast({ title: 'Account created!', description: 'Welcome to Tim Clever Date.' });
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Registration failed', description: e.message });
-    }
+      toast({ title: 'Account created!', description: 'Welcome to Clever Date Match.' });
+    } catch (e: any) { toast({ variant: 'destructive', title: 'Registration failed', description: e.message }); }
   };
 
   const handlePhoneSignup = async (data: z.infer<typeof phoneSchema>) => {
     try {
       await registerWithPhone(data.phone, data.password, data.country);
-      toast({ title: 'Account created!', description: 'Welcome to Tim Clever Date.' });
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Registration failed', description: e.message });
-    }
+      toast({ title: 'Account created!', description: 'Welcome to Clever Date Match.' });
+    } catch (e: any) { toast({ variant: 'destructive', title: 'Registration failed', description: e.message }); }
   };
 
   const handlePhoneLogin = async (data: z.infer<typeof phoneLoginSchema>) => {
-    try {
-      await loginWithPhone(data.phone, data.password);
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Login failed', description: e.message });
-    }
+    try { await loginWithPhone(data.phone, data.password); }
+    catch (e: any) { toast({ variant: 'destructive', title: 'Login failed', description: e.message }); }
   };
 
   const handleSendOtp = async (phone: string) => {
@@ -115,17 +129,12 @@ export default function OnboardingPage() {
       setScreen('otp');
       if (res?.otp) setDevOtp(res.otp);
       toast({ title: 'OTP Sent', description: `A 6-digit code was sent to ${phone}` });
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Failed to send OTP', description: e.message });
-    }
+    } catch (e: any) { toast({ variant: 'destructive', title: 'Failed to send OTP', description: e.message }); }
   };
 
   const handleVerifyOtp = async (data: z.infer<typeof otpSchema>) => {
-    try {
-      await verifyOtp(pendingPhone, data.otp);
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Invalid OTP', description: e.message });
-    }
+    try { await verifyOtp(pendingPhone, data.otp); }
+    catch (e: any) { toast({ variant: 'destructive', title: 'Invalid OTP', description: e.message }); }
   };
 
   const back = () => {
@@ -133,67 +142,198 @@ export default function OnboardingPage() {
     setScreen('choose-method');
   };
 
-  return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(160deg, #1a237e 0%, #1565c0 50%, #0d47a1 100%)' }}>
-
-      {/* Header */}
-      <div className="flex-none px-6 pt-14 pb-10 text-center">
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center">
-            <Heart className="text-white w-7 h-7 fill-white" />
+  /* ── Welcome screen is full-cinematic; all others use white card ── */
+  if (screen === 'welcome') {
+    return (
+      <>
+        <style>{`
+          @keyframes float1 { 0%,100%{transform:translateY(0px) scale(1)} 50%{transform:translateY(-18px) scale(1.1)} }
+          @keyframes float2 { 0%,100%{transform:translateY(0px) rotate(0deg)} 50%{transform:translateY(-12px) rotate(20deg)} }
+          @keyframes float3 { 0%,100%{transform:translateY(0px)} 33%{transform:translateY(-8px)} 66%{transform:translateY(4px)} }
+          @keyframes shimmer { 0%{background-position:200% center} 100%{background-position:-200% center} }
+          @keyframes fadeUp { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
+          @keyframes heartbeat { 0%,100%{transform:scale(1)} 14%{transform:scale(1.12)} 28%{transform:scale(1)} 42%{transform:scale(1.06)} 70%{transform:scale(1)} }
+          @keyframes glow { 0%,100%{text-shadow:0 0 30px rgba(255,195,70,0.6),0 0 60px rgba(255,150,50,0.3)} 50%{text-shadow:0 0 50px rgba(255,220,100,0.9),0 0 100px rgba(255,180,60,0.5)} }
+        `}</style>
+        <div
+          className="min-h-screen flex flex-col relative overflow-hidden"
+          style={{ background: 'linear-gradient(170deg, #040810 0%, #0a0f1e 35%, #0d1535 60%, #0a0f22 100%)' }}
+        >
+          {/* Background glow orbs */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <div style={{ position:'absolute', top:'-10%', left:'30%', width:'420px', height:'420px', background:'radial-gradient(circle, rgba(21,101,192,0.25) 0%, transparent 70%)', borderRadius:'50%' }} />
+            <div style={{ position:'absolute', top:'30%', right:'-15%', width:'350px', height:'350px', background:'radial-gradient(circle, rgba(180,50,120,0.18) 0%, transparent 70%)', borderRadius:'50%' }} />
+            <div style={{ position:'absolute', bottom:'-5%', left:'-10%', width:'300px', height:'300px', background:'radial-gradient(circle, rgba(100,60,200,0.15) 0%, transparent 70%)', borderRadius:'50%' }} />
+            <CinematicBg />
           </div>
-        </div>
-        <h1 className="text-3xl font-bold text-white tracking-tight">Tim Clever Date</h1>
-        <p className="text-blue-200 mt-2 text-sm">Real People. Verified Love. One Match at a Time.</p>
-      </div>
 
-      {/* Content Card */}
-      <div className="flex-1 bg-white rounded-t-3xl px-6 pt-8 pb-10 shadow-2xl overflow-y-auto">
+          {/* Top badge */}
+          <div className="flex justify-center pt-14" style={{ animation: 'fadeUp 0.8s ease both' }}>
+            <div style={{
+              display:'inline-flex', alignItems:'center', gap:'6px',
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '100px',
+              padding: '6px 18px',
+              backdropFilter: 'blur(10px)',
+            }}>
+              <span style={{ width:7, height:7, borderRadius:'50%', background:'#e53935', display:'inline-block', boxShadow:'0 0 8px #e53935' }} />
+              <span style={{ color: 'rgba(255,255,255,0.75)', fontSize:12, fontWeight:600, letterSpacing:2, textTransform:'uppercase' }}>
+                International · Verified · Exclusive
+              </span>
+            </div>
+          </div>
 
-        {/* WELCOME SCREEN */}
-        {screen === 'welcome' && (
-          <div className="flex flex-col gap-6">
-            <div className="space-y-4">
-              {[
-                { icon: <Heart className="w-5 h-5 text-rose-500" />, title: 'One Match Only', desc: 'Focus fully on one person at a time for meaningful connection' },
-                { icon: <ShieldCheck className="w-5 h-5 text-blue-600" />, title: 'AI Verified Profiles', desc: 'Facial verification ensures every profile is real' },
-                { icon: <Star className="w-5 h-5 text-amber-500" />, title: 'Smart Compatibility', desc: 'AI-powered matching based on personality & preferences' },
-              ].map((f, i) => (
-                <div key={i} className="flex items-start gap-4 p-4 rounded-2xl bg-blue-50">
-                  <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm flex-shrink-0">
-                    {f.icon}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-800">{f.title}</p>
-                    <p className="text-sm text-gray-500">{f.desc}</p>
-                  </div>
-                </div>
+          {/* Hero title */}
+          <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" style={{ animation:'fadeUp 1s ease 0.2s both' }}>
+            {/* The big cinematic "C" + rest of name */}
+            <div style={{ marginBottom: 8, lineHeight: 1 }}>
+              <span style={{
+                fontFamily: "'Georgia', 'Times New Roman', serif",
+                fontSize: 'clamp(100px, 22vw, 160px)',
+                fontWeight: 900,
+                fontStyle: 'italic',
+                background: 'linear-gradient(135deg, #ffd700 0%, #ff9500 40%, #ffec6e 70%, #ffd700 100%)',
+                backgroundSize: '200% auto',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+                animation: 'glow 3s ease-in-out infinite, shimmer 4s linear infinite',
+                display: 'inline-block',
+                filter: 'drop-shadow(0 0 40px rgba(255,200,50,0.4))',
+              }}>C</span>
+            </div>
+            <div style={{ marginTop: -16, marginBottom: 20 }}>
+              <span style={{
+                fontFamily: "'Georgia', 'Times New Roman', serif",
+                fontSize: 'clamp(28px, 7vw, 48px)',
+                fontWeight: 700,
+                fontStyle: 'italic',
+                letterSpacing: '0.08em',
+                background: 'linear-gradient(90deg, #ffffff 0%, rgba(255,255,255,0.75) 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+                display: 'block',
+                textTransform: 'uppercase',
+              }}>LEVER DATE MATCH</span>
+            </div>
+
+            {/* Decorative line */}
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24 }}>
+              <div style={{ width:60, height:1, background:'linear-gradient(90deg,transparent,rgba(255,200,70,0.5))' }} />
+              <span style={{ color:'rgba(255,200,70,0.7)', fontSize:18 }}>♥</span>
+              <div style={{ width:60, height:1, background:'linear-gradient(90deg,rgba(255,200,70,0.5),transparent)' }} />
+            </div>
+
+            {/* Tagline */}
+            <p style={{
+              color: 'rgba(255,255,255,0.55)',
+              fontSize: 'clamp(13px,3.5vw,16px)',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              fontWeight: 400,
+              marginBottom: 56,
+              maxWidth: 280,
+            }}>
+              Real People · Verified Love · One Match at a Time
+            </p>
+
+            {/* Feature pills */}
+            <div style={{ display:'flex', flexWrap:'wrap', gap:10, justifyContent:'center', marginBottom:56 }}>
+              {['🛡️ AI Verified', '💎 One Match Only', '🌍 International', '⭐ Smart AI Match'].map((f,i) => (
+                <span key={i} style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 100,
+                  padding: '7px 16px',
+                  color: 'rgba(255,255,255,0.65)',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  backdropFilter: 'blur(8px)',
+                  animation: `fadeUp 0.8s ease ${0.4 + i * 0.1}s both`,
+                }}>{f}</span>
               ))}
             </div>
 
-            <Button
-              className="w-full h-14 text-base font-semibold rounded-2xl shadow-lg"
-              style={{ background: 'linear-gradient(135deg, #1565c0, #1a237e)' }}
-              onClick={() => { setIsLogin(false); setScreen('choose-method'); }}
-            >
-              Get Started
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full h-12 text-blue-700 font-medium"
-              onClick={() => { setIsLogin(true); setScreen('choose-method'); }}
-            >
-              Already have an account? <span className="ml-1 underline">Sign In</span>
-            </Button>
+            {/* CTAs */}
+            <div style={{ width:'100%', maxWidth:380, display:'flex', flexDirection:'column', gap:14, animation:'fadeUp 1s ease 0.8s both' }}>
+              <button
+                onClick={() => { setIsLogin(false); setScreen('choose-method'); }}
+                style={{
+                  width:'100%', height:58,
+                  background: 'linear-gradient(135deg, #ffd700 0%, #ff9500 100%)',
+                  border:'none', borderRadius:16, cursor:'pointer',
+                  fontSize:16, fontWeight:700, color:'#000',
+                  letterSpacing:'0.05em',
+                  boxShadow: '0 8px 32px rgba(255,180,0,0.4), 0 2px 8px rgba(0,0,0,0.3)',
+                  transition: 'transform 0.15s, box-shadow 0.15s',
+                }}
+                onMouseDown={e => (e.currentTarget.style.transform='scale(0.97)')}
+                onMouseUp={e => (e.currentTarget.style.transform='scale(1)')}
+              >
+                Start Your Journey
+              </button>
+
+              <button
+                onClick={() => { setIsLogin(true); setScreen('choose-method'); }}
+                style={{
+                  width:'100%', height:52,
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius:16, cursor:'pointer',
+                  fontSize:15, fontWeight:600,
+                  color:'rgba(255,255,255,0.85)',
+                  letterSpacing:'0.03em',
+                  backdropFilter:'blur(10px)',
+                  transition:'background 0.2s',
+                }}
+              >
+                Sign In
+              </button>
+            </div>
           </div>
-        )}
+
+          {/* Bottom disclaimer */}
+          <div style={{ textAlign:'center', paddingBottom:36, color:'rgba(255,255,255,0.25)', fontSize:11, letterSpacing:'0.05em' }}>
+            For heterosexual singles · 18+ only
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  /* ─── All other screens: white card layout ─── */
+  return (
+    <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(170deg, #040810 0%, #0a0f1e 35%, #0d1535 100%)' }}>
+      {/* Compact header for sub-screens */}
+      <div className="flex-none px-6 pt-10 pb-8 text-center">
+        <button
+          onClick={() => setScreen('welcome')}
+          style={{
+            fontFamily: "'Georgia', serif",
+            fontSize: 22,
+            fontWeight: 900,
+            fontStyle: 'italic',
+            background: 'linear-gradient(135deg, #ffd700, #ff9500, #ffec6e)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+            border: 'none',
+            cursor: 'pointer',
+            letterSpacing: '0.04em',
+          }}
+        >
+          CLEVER DATE MATCH
+        </button>
+      </div>
+
+      {/* White card */}
+      <div className="flex-1 bg-white rounded-t-3xl px-6 pt-8 pb-10 shadow-2xl overflow-y-auto">
 
         {/* CHOOSE METHOD */}
         {screen === 'choose-method' && (
           <div className="flex flex-col gap-4">
-            <button onClick={back} className="flex items-center gap-1 text-blue-600 text-sm mb-2">
-              <ArrowLeft className="w-4 h-4" /> Back
-            </button>
             <h2 className="text-2xl font-bold text-gray-800 mb-1">
               {isLogin ? 'Welcome back' : 'Create account'}
             </h2>
@@ -201,7 +341,6 @@ export default function OnboardingPage() {
               {isLogin ? 'Sign in to continue your journey' : 'Join thousands finding real love'}
             </p>
 
-            {/* Google / Gmail button */}
             <button
               className="w-full h-14 flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 bg-white hover:bg-gray-50 transition-colors shadow-sm"
               onClick={() => setScreen(isLogin ? 'email-login' : 'email-signup')}
@@ -226,23 +365,18 @@ export default function OnboardingPage() {
               <span className="font-semibold text-gray-700">
                 {isLogin ? 'Continue with Phone Number' : 'Sign up with Phone Number'}
               </span>
-              <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
             </button>
 
             <div className="mt-4 text-center">
               {isLogin ? (
                 <p className="text-sm text-gray-500">
                   Don't have an account?{' '}
-                  <button className="text-blue-600 font-semibold" onClick={() => setIsLogin(false)}>
-                    Sign Up
-                  </button>
+                  <button className="text-blue-600 font-semibold" onClick={() => setIsLogin(false)}>Sign Up</button>
                 </p>
               ) : (
                 <p className="text-sm text-gray-500">
                   Already have an account?{' '}
-                  <button className="text-blue-600 font-semibold" onClick={() => setIsLogin(true)}>
-                    Sign In
-                  </button>
+                  <button className="text-blue-600 font-semibold" onClick={() => setIsLogin(true)}>Sign In</button>
                 </p>
               )}
             </div>
@@ -292,9 +426,7 @@ export default function OnboardingPage() {
                 </Button>
                 <p className="text-center text-sm text-gray-500">
                   New here?{' '}
-                  <button type="button" className="text-blue-600 font-semibold" onClick={() => setScreen('email-signup')}>
-                    Create account
-                  </button>
+                  <button type="button" className="text-blue-600 font-semibold" onClick={() => setScreen('email-signup')}>Create account</button>
                 </p>
               </form>
             </Form>
@@ -382,9 +514,7 @@ export default function OnboardingPage() {
                 </Button>
                 <p className="text-center text-sm text-gray-500">
                   Already have an account?{' '}
-                  <button type="button" className="text-blue-600 font-semibold" onClick={() => setScreen('email-login')}>
-                    Sign In
-                  </button>
+                  <button type="button" className="text-blue-600 font-semibold" onClick={() => setScreen('email-login')}>Sign In</button>
                 </p>
               </form>
             </Form>
@@ -434,9 +564,7 @@ export default function OnboardingPage() {
                 </Button>
                 <p className="text-center text-sm text-gray-500">
                   New here?{' '}
-                  <button type="button" className="text-blue-600 font-semibold" onClick={() => setScreen('phone-signup')}>
-                    Create account
-                  </button>
+                  <button type="button" className="text-blue-600 font-semibold" onClick={() => setScreen('phone-signup')}>Create account</button>
                 </p>
               </form>
             </Form>
@@ -524,28 +652,24 @@ export default function OnboardingPage() {
                 </Button>
                 <p className="text-center text-sm text-gray-500">
                   Already have an account?{' '}
-                  <button type="button" className="text-blue-600 font-semibold" onClick={() => setScreen('phone-login')}>
-                    Sign In
-                  </button>
+                  <button type="button" className="text-blue-600 font-semibold" onClick={() => setScreen('phone-login')}>Sign In</button>
                 </p>
               </form>
             </Form>
           </div>
         )}
 
-        {/* OTP SCREEN */}
+        {/* OTP */}
         {screen === 'otp' && (
           <div className="flex flex-col gap-4">
             <button onClick={() => setScreen('phone-login')} className="flex items-center gap-1 text-blue-600 text-sm mb-2">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
             <h2 className="text-2xl font-bold text-gray-800">Enter OTP</h2>
-            <p className="text-gray-500 text-sm">
-              A 6-digit code was sent to <span className="font-medium text-gray-700">{pendingPhone}</span>
-            </p>
+            <p className="text-gray-500 text-sm">We sent a 6-digit code to <strong>{pendingPhone}</strong></p>
             {devOtp && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
-                <strong>Dev mode — OTP:</strong> {devOtp}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700">
+                Dev mode OTP: <strong>{devOtp}</strong>
               </div>
             )}
             <Form {...otpForm}>
@@ -554,7 +678,7 @@ export default function OnboardingPage() {
                   <FormItem>
                     <FormLabel>6-Digit Code</FormLabel>
                     <FormControl>
-                      <Input {...field} type="text" inputMode="numeric" maxLength={6} placeholder="123456" className="h-14 text-center text-2xl tracking-widest rounded-xl" />
+                      <Input {...field} type="text" inputMode="numeric" maxLength={6} placeholder="000000" className="h-14 text-center text-2xl tracking-widest rounded-xl" autoComplete="one-time-code" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -562,14 +686,14 @@ export default function OnboardingPage() {
                 <Button type="submit" className="w-full h-14 text-base font-semibold rounded-2xl" style={{ background: 'linear-gradient(135deg, #1565c0, #1a237e)' }} disabled={otpForm.formState.isSubmitting}>
                   {otpForm.formState.isSubmitting ? 'Verifying...' : 'Verify Code'}
                 </Button>
-                <button type="button" className="w-full text-center text-sm text-blue-600 font-medium" onClick={() => handleSendOtp(pendingPhone)}>
-                  Resend code
-                </button>
+                <p className="text-center text-sm text-gray-500">
+                  Didn't receive it?{' '}
+                  <button type="button" className="text-blue-600 font-semibold" onClick={() => handleSendOtp(pendingPhone)}>Resend</button>
+                </p>
               </form>
             </Form>
           </div>
         )}
-
       </div>
     </div>
   );

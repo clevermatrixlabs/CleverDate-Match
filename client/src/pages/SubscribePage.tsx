@@ -102,14 +102,14 @@ export default function SubscribePage() {
       currency,
       payment_options: 'card,banktransfer,ussd,mobilemoney',
       customer: {
-        email: user.email || `user${user.id}@timcleverdate.app`,
+        email: user.email || `user${user.id}@cleverdatematch.app`,
         phone_number: user.phone || '',
         name: [user.firstName, user.lastName].filter(Boolean).join(' ') || 'User',
       },
       customizations: {
-        title: 'Tim Clever Date',
+        title: 'Clever Date Match',
         description: `${plan.name} subscription — ${plan.period}`,
-        logo: 'https://timcleverdate.app/icon-192.png',
+        logo: 'https://cleverdatematch.app/icon-192.png',
       },
       callback: async (response: any) => {
         setPaying(null);
