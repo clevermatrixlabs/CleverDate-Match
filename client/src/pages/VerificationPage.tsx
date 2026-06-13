@@ -43,6 +43,13 @@ export default function VerificationPage() {
 
   const country = findCountry(user?.country);
 
+  // Admin skip — owner bypasses all verification
+  useEffect(() => {
+    if (user && (user as any).isAdmin) {
+      navigate('/app/');
+    }
+  }, [user, navigate]);
+
   useEffect(() => {
     return () => {
       abortRef.current?.abort();

@@ -39,6 +39,9 @@ export const users = pgTable("users", {
   maxAgePreference: integer("max_age_preference").default(60),
   preferredCountries: text("preferred_countries").array(),
   preferredReligion: text("preferred_religion"),
+  trialActivated: boolean("trial_activated").default(false),
+  trialExpiresAt: timestamp("trial_expires_at"),
+  flutterwaveCardToken: text("flutterwave_card_token"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

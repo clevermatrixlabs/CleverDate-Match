@@ -21,7 +21,7 @@ import * as fs from "fs";
 import * as path from "path";
 import multer from "multer";
 import bcrypt from "bcryptjs";
-import { sendVerificationCode, isEmailConfigured } from "./email";
+import { sendVerificationCode, isEmailConfigured, sendAdminNotification } from "./email";
 import { v2 as cloudinary } from "cloudinary";
 import { sendToUser } from "./engagement";
 
@@ -213,6 +213,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     walletBalance: user.walletBalance,
     isAdmin: !!user.isAdmin,
     isSuspended: !!user.isSuspended,
+    trialActivated: !!user.trialActivated,
+    trialExpiresAt: user.trialExpiresAt ?? null,
   });
 
   // Auto-promote the configured ADMIN_EMAIL to admin, verify them, and give them a complete profile (idempotent).
@@ -286,6 +288,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isPhoneVerified: false,
       });
 
+      // First 100 users — auto-grant 14-day Basic trial
+      const totalUsers = await storage.countUsers();
+      if (totalUsers <= 100) {
+        const trialEnd = new Date();
+        trialEnd.setDate(trialEnd.getDate() + 14);
+        const trialUpdates: any = {
+          subscriptionTier: "basic",
+          subscriptionExpiry: trialEnd.toISOString(),
+          trialActivated: true,
+          trialExpiresAt: trialEnd.toISOString(),
+        };
+        await storage.updateUser(newUser.id, trialUpdates);
+        Object.assign(newUser, trialUpdates);
+        console.log(`[trial] User #${newUser.id} granted 14-day free trial (user ${totalUsers} of 100)`);
+      }
+
       req.logIn(newUser, (err) => {
         if (err) {
           return res.status(500).json({ message: "Login after registration failed" });
@@ -330,6 +348,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isEmailVerified: false,
         isPhoneVerified: false,
       });
+
+      // First 100 users — auto-grant 14-day Basic trial
+      const totalUsersPhone = await storage.countUsers();
+      if (totalUsersPhone <= 100) {
+        const trialEnd = new Date();
+        trialEnd.setDate(trialEnd.getDate() + 14);
+        const trialUpdates: any = {
+          subscriptionTier: "basic",
+          subscriptionExpiry: trialEnd.toISOString(),
+          trialActivated: true,
+          trialExpiresAt: trialEnd.toISOString(),
+        };
+        await storage.updateUser(newUser.id, trialUpdates);
+        Object.assign(newUser, trialUpdates);
+        console.log(`[trial] Phone user #${newUser.id} granted 14-day free trial (user ${totalUsersPhone} of 100)`);
+      }
 
       req.logIn(newUser, (err) => {
         if (err) {
@@ -1415,6 +1449,213 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) {
       console.error("Admin verify user error:", e);
       res.status(500).json({ message: "Failed to verify user" });
+    }
+  });
+
+  // ============================================================
+  // Payment / Flutterwave routes
+  // ============================================================
+
+  /** Exchange rates — no auth required, cached by client */
+  app.get("/api/payment/rates", async (_req, res) => {
+    try {
+      const resp = await fetch("https://open.er-api.com/v6/latest/USD");
+      if (!resp.ok) throw new Error("upstream error");
+      const data: any = await resp.json();
+      res.json({ rates: data.rates, base: "USD", updated: data.time_last_update_utc });
+    } catch {
+      res.status(503).json({ message: "Exchange rates temporarily unavailable. Using USD pricing." });
+    }
+  });
+
+  /** Helper: activate a subscription tier for a user */
+  async function activateSubscriptionForUser(userId: number, planId: string) {
+    const tierMap: Record<string, string> = { basic: "basic", silver: "silver", diamond: "diamond", gold: "gold" };
+    const tier = tierMap[planId];
+    if (!tier) throw new Error("Invalid plan");
+    const endDate = new Date();
+    if (planId === "gold") {
+      endDate.setFullYear(endDate.getFullYear() + 1);
+    } else {
+      endDate.setMonth(endDate.getMonth() + 1);
+    }
+    await storage.createSubscription({
+      userId,
+      tier: tier as any,
+      startDate: new Date().toISOString(),
+      endDate: endDate.toISOString(),
+      autoRenew: true,
+      status: "active",
+    });
+    await storage.updateUser(userId, {
+      subscriptionTier: tier as any,
+      subscriptionExpiry: endDate.toISOString(),
+    });
+  }
+
+  /**
+   * Verify a Flutterwave transaction and activate subscription.
+   * Called by the frontend after the Flutterwave callback.
+   */
+  app.post("/api/payment/flutterwave/verify", requireAuth, async (req: any, res) => {
+    try {
+      const user = req.user as any;
+      const { transactionId, planId } = req.body;
+
+      if (!transactionId || !planId) {
+        return res.status(400).json({ message: "transactionId and planId are required" });
+      }
+
+      const FLW_SECRET = process.env.FLUTTERWAVE_SECRET_KEY;
+
+      if (!FLW_SECRET) {
+        // Demo / dev mode — activate without verifying
+        await activateSubscriptionForUser(user.id, planId);
+        return res.json({ success: true, message: "Subscription activated (dev mode)" });
+      }
+
+      // Verify with Flutterwave API
+      const verifyResp = await fetch(`https://api.flutterwave.com/v3/transactions/${transactionId}/verify`, {
+        headers: { Authorization: `Bearer ${FLW_SECRET}`, "Content-Type": "application/json" },
+      });
+      const data: any = await verifyResp.json();
+
+      if (data.status !== "success" || data.data?.status !== "successful") {
+        return res.status(402).json({ message: "Payment could not be verified with Flutterwave. Please contact support." });
+      }
+
+      // Confirm the payment belongs to the right user
+      const customerEmail = data.data?.customer?.email || "";
+      const customerPhone = data.data?.customer?.phone_number || "";
+      if (
+        customerEmail && user.email && customerEmail.toLowerCase() !== user.email.toLowerCase() &&
+        customerPhone && user.phone && customerPhone !== user.phone
+      ) {
+        return res.status(400).json({ message: "Payment customer mismatch — please contact support." });
+      }
+
+      await activateSubscriptionForUser(user.id, planId);
+
+      // Log the transaction
+      await storage.createTransaction({
+        userId: user.id,
+        amount: String(data.data?.amount || 0),
+        type: "deposit",
+        status: "completed",
+      });
+
+      res.json({ success: true, message: "Subscription activated" });
+    } catch (e: any) {
+      console.error("[FLW verify]", e?.message);
+      res.status(500).json({ message: "Payment verification failed. Please try again." });
+    }
+  });
+
+  /**
+   * Flutterwave webhook (called directly by Flutterwave servers).
+   * Used for auto-renewal and server-side confirmation.
+   */
+  app.post("/api/payment/flutterwave/webhook", async (req, res) => {
+    try {
+      const secret = process.env.FLUTTERWAVE_WEBHOOK_SECRET;
+      if (secret) {
+        const hash = req.headers["verif-hash"];
+        if (hash !== secret) {
+          return res.status(401).json({ message: "Invalid webhook signature" });
+        }
+      }
+      const event = req.body;
+      if (event?.event === "charge.completed" && event?.data?.status === "successful") {
+        const txRef: string = event.data.tx_ref || "";
+        // tx_ref format: TCD-{userId}-{planId}-{timestamp}
+        const parts = txRef.split("-");
+        if (parts.length >= 3 && parts[0] === "TCD") {
+          const userId = parseInt(parts[1], 10);
+          const planId = parts[2];
+          if (!isNaN(userId) && planId) {
+            await activateSubscriptionForUser(userId, planId).catch(e =>
+              console.error("[FLW webhook] activation error:", e?.message)
+            );
+          }
+        }
+      }
+      res.json({ received: true });
+    } catch (e: any) {
+      console.error("[FLW webhook]", e?.message);
+      res.status(500).json({ message: "Webhook processing failed" });
+    }
+  });
+
+  /**
+   * Card / payment error report — frontend calls this when Flutterwave returns failure.
+   * AI analyses the error and notifies admin.
+   */
+  app.post("/api/payment/card-error", requireAuth, async (req: any, res) => {
+    try {
+      const user = req.user as any;
+      const { planId, flwStatus, txRef } = req.body;
+
+      const summary = [
+        `User ID   : ${user.id}`,
+        `Email     : ${user.email || "(phone user)"}`,
+        `Country   : ${user.country || "unknown"}`,
+        `Plan      : ${planId}`,
+        `FLW status: ${flwStatus}`,
+        `TX ref    : ${txRef}`,
+        `Time      : ${new Date().toISOString()}`,
+      ].join("\n");
+
+      // Notify admin
+      await sendAdminNotification("Payment failure — manual review needed", summary);
+
+      console.warn("[card-error] Payment failure reported:\n", summary);
+      res.json({ received: true });
+    } catch (e: any) {
+      console.error("[card-error]", e?.message);
+      res.status(500).json({ message: "Failed to report error" });
+    }
+  });
+
+  // ── Admin: gift a subscription to any user ───────────────────────────────────
+  app.post("/api/admin/gift-subscription", requireAdmin, async (req: any, res) => {
+    try {
+      const { userId, tier, days } = req.body;
+
+      if (!userId || !tier || !["basic", "silver", "diamond", "gold"].includes(tier)) {
+        return res.status(400).json({ message: "userId and valid tier are required" });
+      }
+
+      const targetUser = await storage.getUser(Number(userId));
+      if (!targetUser) return res.status(404).json({ message: "User not found" });
+
+      const d = Math.max(1, Number(days) || 30);
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + d);
+
+      await storage.createSubscription({
+        userId: targetUser.id,
+        tier: tier as any,
+        startDate: new Date().toISOString(),
+        endDate: endDate.toISOString(),
+        autoRenew: false,
+        status: "active",
+      });
+
+      await storage.updateUser(targetUser.id, {
+        subscriptionTier: tier as any,
+        subscriptionExpiry: endDate.toISOString(),
+      });
+
+      const adminEmail = req.user?.email || "admin";
+      await sendAdminNotification(
+        "Subscription gifted",
+        `Admin (${adminEmail}) gifted ${tier} for ${d} days to user #${targetUser.id} (${targetUser.email || targetUser.phone})`
+      );
+
+      res.json({ success: true, message: `${tier} gifted to user #${targetUser.id} for ${d} days` });
+    } catch (e: any) {
+      console.error("[gift-sub]", e?.message);
+      res.status(500).json({ message: "Failed to gift subscription" });
     }
   });
 

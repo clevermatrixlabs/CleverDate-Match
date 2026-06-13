@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/context/AuthContext';
@@ -19,7 +19,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Gift } from 'lucide-react';
 
 type AdminStats = {
   users: number;
@@ -53,6 +63,11 @@ export default function AdminDashboardPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
+  // Gift subscription form state
+  const [giftUserId, setGiftUserId] = useState('');
+  const [giftTier, setGiftTier] = useState('basic');
+  const [giftDays, setGiftDays] = useState('30');
+
   // Guard: only admins
   useEffect(() => {
     if (!authLoading && (!user || !(user as any).isAdmin)) {
@@ -63,11 +78,21 @@ export default function AdminDashboardPage() {
   const statsQuery = useQuery<AdminStats>({
     queryKey: ['/api/admin/stats'],
     enabled: !!user && (user as any).isAdmin,
+    queryFn: async () => {
+      const res = await fetch('/api/admin/stats', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch stats');
+      return res.json();
+    },
   });
 
   const usersQuery = useQuery<AdminUser[]>({
     queryKey: ['/api/admin/users'],
     enabled: !!user && (user as any).isAdmin,
+    queryFn: async () => {
+      const res = await fetch('/api/admin/users', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch users');
+      return res.json();
+    },
   });
 
   const suspendMutation = useMutation({
@@ -94,6 +119,32 @@ export default function AdminDashboardPage() {
     },
     onError: (e: any) => toast({ variant: 'destructive', title: 'Failed', description: e?.message || 'Try again' }),
   });
+
+  const giftMutation = useMutation({
+    mutationFn: async ({ userId, tier, days }: { userId: number; tier: string; days: number }) =>
+      apiRequest('POST', '/api/admin/gift-subscription', { userId, tier, days }),
+    onSuccess: (_data: any, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
+      toast({ title: 'Subscription gifted!', description: `${vars.tier} plan given to user #${vars.userId} for ${vars.days} days.` });
+      setGiftUserId('');
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Gift failed', description: e?.message || 'Try again' }),
+  });
+
+  const handleGift = () => {
+    const uid = parseInt(giftUserId, 10);
+    const d = parseInt(giftDays, 10);
+    if (isNaN(uid) || uid <= 0) {
+      toast({ variant: 'destructive', title: 'Invalid user ID' });
+      return;
+    }
+    if (isNaN(d) || d <= 0 || d > 3650) {
+      toast({ variant: 'destructive', title: 'Days must be between 1 and 3650' });
+      return;
+    }
+    giftMutation.mutate({ userId: uid, tier: giftTier, days: d });
+  };
 
   if (authLoading || !user || !(user as any).isAdmin) {
     return (
@@ -155,6 +206,68 @@ export default function AdminDashboardPage() {
             </Card>
           ))}
         </section>
+
+        {/* Gift subscription section */}
+        <Card className="border-purple-200 bg-purple-50/40">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-purple-700">
+              <Gift className="h-5 w-5" />
+              Gift a subscription
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600 mb-4">
+              Give any user a paid subscription tier for free. Great for rewarding early users or testers.
+            </p>
+            <div className="grid sm:grid-cols-4 gap-3 items-end">
+              <div className="space-y-1">
+                <Label htmlFor="gift-user-id">User ID</Label>
+                <Input
+                  id="gift-user-id"
+                  type="number"
+                  placeholder="e.g. 42"
+                  value={giftUserId}
+                  onChange={(e) => setGiftUserId(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="gift-tier">Plan</Label>
+                <Select value={giftTier} onValueChange={setGiftTier}>
+                  <SelectTrigger id="gift-tier">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="basic">Basic</SelectItem>
+                    <SelectItem value="silver">Silver</SelectItem>
+                    <SelectItem value="diamond">Diamond</SelectItem>
+                    <SelectItem value="gold">Gold (1 year)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="gift-days">Days</Label>
+                <Input
+                  id="gift-days"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={giftDays}
+                  onChange={(e) => setGiftDays(e.target.value)}
+                />
+              </div>
+              <Button
+                onClick={handleGift}
+                disabled={giftMutation.isPending || !giftUserId}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                {giftMutation.isPending ? 'Gifting...' : 'Gift plan'}
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500 mt-3">
+              Tip: find the user ID in the accounts table below, then enter it above.
+            </p>
+          </CardContent>
+        </Card>
 
         {/* Users table */}
         <Card>
@@ -220,6 +333,15 @@ export default function AdminDashboardPage() {
                             Verify
                           </Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                          onClick={() => { setGiftUserId(String(u.id)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                          title="Gift subscription"
+                        >
+                          Gift
+                        </Button>
                         {!u.isAdmin && (
                           u.isSuspended ? (
                             <Button
