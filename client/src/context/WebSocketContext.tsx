@@ -1,10 +1,13 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, useCallback, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
+type MessageHandler = (data: any) => void;
+
 interface WebSocketContextType {
-  sendMessage: (data: any) => void;
+  sendWsMessage: (data: any) => void;
   isConnected: boolean;
+  addMessageHandler: (handler: MessageHandler) => () => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
@@ -14,160 +17,100 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const handlers = useRef<Set<MessageHandler>>(new Set());
+
+  const addMessageHandler = useCallback((handler: MessageHandler) => {
+    handlers.current.add(handler);
+    return () => { handlers.current.delete(handler); };
+  }, []); // stable reference — handlers.current is a ref, never changes
 
   useEffect(() => {
     if (!user) {
-      if (socket) {
-        socket.close();
-        setSocket(null);
-        setIsConnected(false);
-      }
+      socket?.close();
+      setSocket(null);
+      setIsConnected(false);
       return;
     }
 
-    let pingInterval: NodeJS.Timeout | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let pingInterval: ReturnType<typeof setInterval> | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    // Function to create and set up a new WebSocket connection
     const setupWebSocket = () => {
-      // Initialize WebSocket connection
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-      const newSocket = new WebSocket(wsUrl);
-      
-      // Connection established
-      newSocket.onopen = () => {
-        console.log('WebSocket connected');
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+      ws.onopen = () => {
         setIsConnected(true);
-        
-        // Send authentication message
-        newSocket.send(JSON.stringify({
-          type: 'auth',
-          userId: user.id
-        }));
-        
-        // Set up ping interval to keep connection alive
+        ws.send(JSON.stringify({ type: 'auth', userId: user.id }));
         pingInterval = setInterval(() => {
-          if (newSocket.readyState === WebSocket.OPEN) {
-            newSocket.send(JSON.stringify({ type: 'ping' }));
-          }
-        }, 30000); // Every 30 seconds
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+        }, 30000);
       };
 
-      // Connection closed
-      newSocket.onclose = (event) => {
-        console.log(`WebSocket disconnected: ${event.code} ${event.reason || ''}`);
+      ws.onclose = () => {
         setIsConnected(false);
-        
-        // Clean up ping interval
-        if (pingInterval) {
-          clearInterval(pingInterval);
-          pingInterval = null;
-        }
-        
-        // Try to reconnect after a delay
-        reconnectTimeout = setTimeout(() => {
-          console.log('Attempting to reconnect WebSocket...');
-          setupWebSocket();
-        }, 5000); // Try to reconnect after 5 seconds
+        if (pingInterval) clearInterval(pingInterval);
+        reconnectTimeout = setTimeout(setupWebSocket, 5000);
       };
 
-      // Connection error
-      newSocket.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setIsConnected(false);
-      };
+      ws.onerror = () => setIsConnected(false);
 
-      // Message received
-      newSocket.onmessage = (event) => {
+      ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
-          // Handle different message types
+
+          // Dispatch to all subscribed handlers (MatchContext, etc.)
+          handlers.current.forEach(h => h(data));
+
+          // Built-in toast handling
           switch (data.type) {
-            case 'auth':
-              console.log('Authentication status:', data.success);
-              break;
-              
             case 'engagement_nudge':
               toast({
-                title: "Reconnect with your match!",
-                description: data.suggestion || `It's been ${data.hoursSince} hours since your last message.`,
+                title: 'Reconnect with your match!',
+                description: data.suggestion || `${data.hoursSince}h since your last message.`,
                 duration: 10000,
               });
               break;
-              
             case 'new_match':
-              toast({
-                title: "New Match!",
-                description: "You have a new match. Start chatting now!",
-                variant: "default",
-              });
+              toast({ title: 'New Match! 🎉', description: 'You have a new match. Start chatting!' });
               break;
-              
             case 'new_message':
-              toast({
-                title: "New Message",
-                description: "You have received a new message.",
-                variant: "default",
-              });
-              break;
-              
-            // Handle ping response
-            case 'pong':
-              console.log('Received pong from server');
+              // Toasts are shown only when not in the messages tab (MatchContext suppresses when active)
               break;
           }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+        } catch (e) {
+          console.error('WS parse error', e);
         }
       };
 
-      setSocket(newSocket);
-      return newSocket;
+      setSocket(ws);
+      return ws;
     };
 
-    // Initial setup
-    const newSocket = setupWebSocket();
+    const ws = setupWebSocket();
 
-    // Cleanup function
     return () => {
-      // Clear intervals and timeouts
-      if (pingInterval) {
-        clearInterval(pingInterval);
-      }
-      
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      
-      // Close WebSocket if it's open
-      if (newSocket && newSocket.readyState === WebSocket.OPEN) {
-        newSocket.close();
-      }
+      if (pingInterval) clearInterval(pingInterval);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (ws.readyState === WebSocket.OPEN) ws.close();
     };
-  }, [user]);
+  }, [user?.id]);
 
-  // Function to send messages through WebSocket
-  const sendMessage = (data: any) => {
+  const sendWsMessage = (data: any) => {
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(data));
-    } else {
-      console.error('WebSocket is not connected');
     }
   };
 
   return (
-    <WebSocketContext.Provider value={{ sendMessage, isConnected }}>
+    <WebSocketContext.Provider value={{ sendWsMessage, isConnected, addMessageHandler }}>
       {children}
     </WebSocketContext.Provider>
   );
 }
 
 export function useWebSocket() {
-  const context = useContext(WebSocketContext);
-  if (context === undefined) {
-    throw new Error('useWebSocket must be used within a WebSocketProvider');
-  }
-  return context;
+  const ctx = useContext(WebSocketContext);
+  if (!ctx) throw new Error('useWebSocket must be used within a WebSocketProvider');
+  return ctx;
 }

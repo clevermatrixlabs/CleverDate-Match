@@ -23,6 +23,7 @@ import multer from "multer";
 import bcrypt from "bcryptjs";
 import { sendVerificationCode, isEmailConfigured } from "./email";
 import { v2 as cloudinary } from "cloudinary";
+import { sendToUser } from "./engagement";
 
 const BCRYPT_ROUNDS = 12;
 async function hashPassword(plain: string): Promise<string> {
@@ -1062,6 +1063,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         content,
         isRead: false,
       });
+
+      // Push message to recipient in real-time via WebSocket
+      sendToUser(recipientId, { type: 'chat_message', message });
 
       res.json(message);
     } catch (error) {
