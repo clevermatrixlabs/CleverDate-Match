@@ -20,7 +20,18 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import multer from "multer";
+import bcrypt from "bcryptjs";
 import { sendVerificationCode, isEmailConfigured } from "./email";
+
+const BCRYPT_ROUNDS = 12;
+async function hashPassword(plain: string): Promise<string> {
+  return bcrypt.hash(plain, BCRYPT_ROUNDS);
+}
+async function verifyPassword(plain: string, stored: string): Promise<boolean> {
+  // Support both bcrypt hashes and legacy plain-text passwords (auto-upgrade on login)
+  if (stored.startsWith('$2')) return bcrypt.compare(plain, stored);
+  return plain === stored; // legacy plain-text — will be rehashed on successful login
+}
 
 // Multer — save uploaded files to disk in /uploads, serve them as static assets
 const uploadsDir = path.join(process.cwd(), "uploads");
@@ -86,8 +97,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return done(null, false, { message: "No account found with that email or phone number" });
         }
 
-        if (user.password !== password) {
+        const passwordOk = await verifyPassword(password, user.password);
+        if (!passwordOk) {
           return done(null, false, { message: "Incorrect password" });
+        }
+        // Auto-upgrade legacy plain-text passwords to bcrypt on successful login
+        if (!user.password.startsWith('$2')) {
+          const hashed = await hashPassword(password);
+          await storage.updateUser(user.id, { password: hashed });
         }
 
         if ((user as any).isSuspended) {
@@ -214,7 +231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newUser = await storage.createUser({
         username,
         email: validatedData.email.toLowerCase(),
-        password: validatedData.password,
+        password: await hashPassword(validatedData.password),
         country: validatedData.country,
         walletBalance: "0",
         isVerified: false,
@@ -259,7 +276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newUser = await storage.createUser({
         username,
         phone: validatedData.phone,
-        password: validatedData.password,
+        password: await hashPassword(validatedData.password),
         country: validatedData.country,
         walletBalance: "0",
         isVerified: false,
@@ -352,8 +369,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!phone || !password) return res.status(400).json({ message: "Phone and password required" });
 
       const user = await storage.getUserByPhone(phone);
-      if (!user || user.password !== password) {
+      if (!user || !(await verifyPassword(password, user.password))) {
         return res.status(401).json({ message: "Invalid phone number or password" });
+      }
+      // Auto-upgrade legacy plain-text passwords
+      if (!user.password.startsWith('$2')) {
+        await storage.updateUser(user.id, { password: await hashPassword(password) });
       }
 
       req.logIn(user, (err) => {
@@ -642,6 +663,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Update user error:", error);
       res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  // Permanent account + data deletion (GDPR-compliant)
+  app.delete("/api/users/me", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      // Prevent deletion of the owner/admin account
+      if (user.email === process.env.ADMIN_EMAIL) {
+        return res.status(403).json({ message: "The owner account cannot be deleted." });
+      }
+      await storage.deleteUser(user.id);
+      req.logout(() => {
+        req.session.destroy(() => {
+          res.json({ success: true, message: "Your account and all associated data have been permanently deleted." });
+        });
+      });
+    } catch (error) {
+      console.error("Account deletion error:", error);
+      res.status(500).json({ message: "Failed to delete account. Please try again." });
     }
   });
 

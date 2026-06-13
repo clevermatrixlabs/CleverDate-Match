@@ -40,6 +40,7 @@ export interface IStorage {
   getUserByPhone(phone: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, userData: Partial<User>): Promise<User>;
+  deleteUser(id: number): Promise<void>;
   // Admin helpers
   listUsers(): Promise<User[]>;
   countUsers(): Promise<number>;
@@ -148,6 +149,16 @@ export class MemStorage implements IStorage {
     };
     this.users.set(id, user);
     return user;
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    // Remove all data linked to this user
+    this.users.delete(id);
+    for (const [k, v] of this.verifications) if (v.userId === id) this.verifications.delete(k);
+    for (const [k, v] of this.matches) if ((v as any).userId1 === id || (v as any).userId2 === id) this.matches.delete(k);
+    for (const [k, v] of this.messages) if (v.senderId === id) this.messages.delete(k);
+    for (const [k, v] of this.subscriptions) if (v.userId === id) this.subscriptions.delete(k);
+    for (const [k, v] of this.transactions) if (v.userId === id) this.transactions.delete(k);
   }
 
   async updateUser(id: number, userData: Partial<User>): Promise<User> {
@@ -406,6 +417,19 @@ export class DrizzleStorage implements IStorage {
       updatedAt: now
     }).returning());
     return results[0];
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    if (!db) throw new Error("Database not available");
+    // Cascade delete all user data in the correct dependency order
+    await withRetry(() => db.delete(schema.messages).where(eq(schema.messages.senderId, id)));
+    await withRetry(() => db.delete(schema.matches).where(
+      or(eq(schema.matches.userId1, id), eq(schema.matches.userId2, id))
+    ));
+    await withRetry(() => db.delete(schema.verifications).where(eq(schema.verifications.userId, id)));
+    await withRetry(() => db.delete(schema.subscriptions).where(eq(schema.subscriptions.userId, id)));
+    await withRetry(() => db.delete(schema.transactions).where(eq(schema.transactions.userId, id)));
+    await withRetry(() => db.delete(schema.users).where(eq(schema.users.id, id)));
   }
 
   async updateUser(id: number, userData: Partial<User>): Promise<User> {

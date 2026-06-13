@@ -16,13 +16,20 @@ export function loadFaceModels(onProgress?: (label: string) => void): Promise<vo
     await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
     onProgress?.('Loading face recognition...');
     await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+    onProgress?.('Loading high-accuracy detector...');
+    await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
     modelsReady = true;
   })();
 
   return loadPromise;
 }
 
-const detectorOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 });
+// Higher resolution for better accuracy on mobile cameras
+const liveDetectorOpts  = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.35 });
+// For ID photos: start with the high-accuracy SSD model, lower threshold since photos are sharp
+const idDetectorPrimary = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+// Fallback: TinyFaceDetector with very low threshold for harder ID photos
+const idDetectorFallback = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.25 });
 
 function eyeAspectRatio(eye: faceapi.Point[]): number {
   const dist = (a: faceapi.Point, b: faceapi.Point) =>
@@ -61,18 +68,16 @@ export interface LivenessResult {
 
 const REQUIRED_BLINKS = 2;
 
-// More lenient thresholds — different people/lighting/eyes vary a lot.
-// EAR for open eyes is typically 0.25–0.35; during a blink it drops to 0.15–0.22.
-// We use a wider hysteresis band so shallow or fast blinks are still caught.
-const EAR_CLOSED   = 0.24;  // eye considered "closed" below this (was 0.21 — too strict)
-const EAR_OPEN     = 0.26;  // eye considered "open" again above this  (was 0.28 — too high)
+// EAR thresholds — tuned for mobile cameras with variable lighting
+const EAR_CLOSED       = 0.22;  // eye "closed" below this
+const EAR_OPEN         = 0.27;  // eye "open" again above this
 
-// Head-turn thresholds — easier to achieve on a phone held in portrait
-const YAW_LEFT     = -0.18; // was -0.25
-const YAW_RIGHT    =  0.18; // was  0.25
+// Head-turn thresholds — small turns are enough on mobile
+const YAW_LEFT         = -0.16;
+const YAW_RIGHT        =  0.16;
 
-// Min ms between two counted blinks to prevent double-counting one slow blink
-const BLINK_COOLDOWN_MS = 350;
+// Min ms between two counted blinks to avoid double-counting
+const BLINK_COOLDOWN_MS = 400;
 
 export async function runLivenessCheck(
   videoEl: HTMLVideoElement,
@@ -87,16 +92,16 @@ export async function runLivenessCheck(
   let bestSnapshot: { descriptor: Float32Array; canvas: HTMLCanvasElement; score: number } | null = null;
 
   const start      = Date.now();
-  const TIMEOUT_MS = 60_000; // 60 s — extra time for slower phones
+  const TIMEOUT_MS = 90_000; // 90 s — extra time for slower phones
 
   while (true) {
     if (signal?.aborted) throw new Error('Liveness check cancelled');
     if (Date.now() - start > TIMEOUT_MS) {
-      throw new Error('Verification timed out — please try again with better lighting and stay in frame.');
+      throw new Error('Verification timed out. Move to a brighter area, keep your face centered, and try again.');
     }
 
     const det = await faceapi
-      .detectSingleFace(videoEl, detectorOpts)
+      .detectSingleFace(videoEl, liveDetectorOpts)
       .withFaceLandmarks()
       .withFaceDescriptor();
 
@@ -108,7 +113,7 @@ export async function runLivenessCheck(
       onProgress({
         blinks, turnedLeft, turnedRight,
         faceDetected: false,
-        message: 'Center your face in the circle',
+        message: 'Center your face in the circle — good lighting helps',
         percent,
       });
       await sleep(80);
@@ -148,9 +153,9 @@ export async function runLivenessCheck(
     }
 
     let message = 'Hold still...';
-    if (blinks < REQUIRED_BLINKS) message = `Blink your eyes (${blinks}/${REQUIRED_BLINKS})`;
-    else if (!turnedLeft)         message = 'Turn your head slightly LEFT ←';
-    else if (!turnedRight)        message = 'Turn your head slightly RIGHT →';
+    if (blinks < REQUIRED_BLINKS) message = `Blink slowly and fully (${blinks}/${REQUIRED_BLINKS} done)`;
+    else if (!turnedLeft)         message = '↩ Slowly turn your head LEFT';
+    else if (!turnedRight)        message = '↪ Slowly turn your head RIGHT';
     else                          message = 'Almost done...';
 
     onProgress({ blinks, turnedLeft, turnedRight, faceDetected: true, message, percent });
@@ -159,31 +164,45 @@ export async function runLivenessCheck(
       onProgress({ blinks, turnedLeft, turnedRight, faceDetected: true, message: 'Verified! ✓', percent: 100 });
       return {
         descriptor: Array.from(bestSnapshot!.descriptor),
-        snapshotDataUrl: bestSnapshot!.canvas.toDataURL('image/jpeg', 0.7),
+        snapshotDataUrl: bestSnapshot!.canvas.toDataURL('image/jpeg', 0.85),
       };
     }
 
-    // Poll faster — blinks are short (150–400 ms), we must not miss them
     await sleep(60);
   }
 }
 
+/** Detect a face in an ID document photo.
+ *  Tries SSD Mobilenet first (better for photos), falls back to TinyFaceDetector
+ *  with a relaxed threshold if the first pass fails. */
 export async function detectFaceInImageFile(file: File): Promise<{ descriptor: number[]; previewDataUrl: string }> {
   const previewDataUrl = await fileToDataUrl(file);
   const img = await loadImage(previewDataUrl);
 
-  const det = await faceapi
-    .detectSingleFace(img, detectorOpts)
+  // Pass 1 — SSD Mobilenet (high accuracy on still photos)
+  let det = await faceapi
+    .detectSingleFace(img, idDetectorPrimary)
     .withFaceLandmarks()
     .withFaceDescriptor();
 
+  // Pass 2 — TinyFaceDetector with higher inputSize and lower threshold
   if (!det) {
-    throw new Error("Couldn't detect a face on your ID document. Please use a clear, well-lit photo where the face is fully visible.");
+    det = await faceapi
+      .detectSingleFace(img, idDetectorFallback)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+  }
+
+  if (!det) {
+    throw new Error(
+      "No face found on the ID photo. Tips: ensure the photo side is face-up, use good lighting, avoid glare, " +
+      "and make sure your face on the ID is clearly visible and not cropped."
+    );
   }
 
   return {
     descriptor: Array.from(det.descriptor),
-    previewDataUrl: shrinkDataUrl(img, 600),
+    previewDataUrl: shrinkDataUrl(img, 800),
   };
 }
 
@@ -228,5 +247,5 @@ function shrinkDataUrl(img: HTMLImageElement, maxWidth: number): string {
   canvas.height = h;
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(img, 0, 0, w, h);
-  return canvas.toDataURL('image/jpeg', 0.7);
+  return canvas.toDataURL('image/jpeg', 0.85);
 }

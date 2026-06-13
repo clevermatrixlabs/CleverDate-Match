@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Mail, Phone, Eye, EyeOff, ArrowLeft, Heart, ShieldCheck, Star, ChevronRight, Globe } from 'lucide-react';
 import { SiGoogle } from 'react-icons/si';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { COUNTRIES } from '@/lib/countries';
+import { COUNTRIES, detectCountryFromIP } from '@/lib/countries';
 
 type Screen = 'welcome' | 'choose-method' | 'email-login' | 'email-signup' | 'phone-login' | 'phone-signup' | 'otp';
 
@@ -58,6 +58,15 @@ export default function OnboardingPage() {
 
   const { loginWithEmail, loginWithPhone, registerWithEmail, registerWithPhone, sendOtp, verifyOtp } = useAuth();
   const { toast } = useToast();
+
+  // Auto-detect country from IP when the signup forms are first mounted
+  useEffect(() => {
+    detectCountryFromIP().then(code => {
+      if (!code) return;
+      if (!emailSignupForm.getValues('country')) emailSignupForm.setValue('country', code);
+      if (!phoneForm.getValues('country')) phoneForm.setValue('country', code);
+    });
+  }, []);
 
   const emailLoginForm = useForm({ resolver: zodResolver(emailLoginSchema), defaultValues: { email: '', password: '' } });
   const emailSignupForm = useForm({ resolver: zodResolver(emailSignupSchema), defaultValues: { email: '', password: '', confirmPassword: '', country: '' } });

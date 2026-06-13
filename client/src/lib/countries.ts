@@ -29,5 +29,22 @@ export const COUNTRIES: CountryInfo[] = [
 
 export function findCountry(code?: string | null): CountryInfo | undefined {
   if (!code) return undefined;
-  return COUNTRIES.find(c => c.code === code);
+  return COUNTRIES.find(c => c.code === code) ?? COUNTRIES.find(c => c.code === 'OTHER');
+}
+
+/** Auto-detect the user's country via IP geolocation (free, no API key needed).
+ *  Returns a COUNTRIES code string, or null if detection fails. */
+export async function detectCountryFromIP(): Promise<string | null> {
+  try {
+    const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const code = data?.country_code as string | undefined;
+    if (!code) return null;
+    // Match to our supported country list; fall back to OTHER
+    const match = COUNTRIES.find(c => c.code === code);
+    return match ? match.code : 'OTHER';
+  } catch {
+    return null;
+  }
 }
