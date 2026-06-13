@@ -108,7 +108,7 @@ export default function SubscribePage() {
       },
       customizations: {
         title: 'Tim Clever Date',
-        description: `${plan.name} subscription — ${plan.period}ly`,
+        description: `${plan.name} subscription — ${plan.period}`,
         logo: 'https://timcleverdate.app/icon-192.png',
       },
       callback: async (response: any) => {

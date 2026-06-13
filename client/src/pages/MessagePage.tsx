@@ -78,7 +78,7 @@ export default function MessagePage() {
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
                 <Sparkles className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-blue-800 text-sm">Plans start at just $14.99/month</p>
+                  <p className="font-semibold text-blue-800 text-sm">Plans start at just $15/month</p>
                   <p className="text-blue-700 text-xs mt-0.5">
                     Pay in your local currency with real exchange rates. Cards, bank transfer, USSD & mobile money accepted.
                   </p>

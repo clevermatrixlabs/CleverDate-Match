@@ -6,6 +6,7 @@ import session from "express-session";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import * as crypto from "crypto";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { 
   loginSchema, 
@@ -257,6 +258,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     req.user = user;
     next();
   };
+
+  // ── Rate limiters ─────────────────────────────────────────────────────────
+  const authRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20,                   // max 20 attempts per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many attempts. Please try again in 15 minutes." },
+  });
+
+  const strictRateLimit = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5,                    // max 5 OTP requests per hour
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many OTP requests. Please try again in an hour." },
+  });
+
+  // ── CSRF: reject requests from unexpected origins ──────────────────────────
+  const csrfGuard = (req: any, res: any, next: any) => {
+    const origin = req.headers.origin || req.headers.referer || "";
+    const host = req.headers.host || "";
+    // Allow same-origin (no Origin header = server-side/curl), and Replit preview URLs
+    if (!origin || origin.includes(host) || origin.includes("replit") || origin.includes("replit.app")) {
+      return next();
+    }
+    return res.status(403).json({ message: "Forbidden: cross-origin request blocked" });
+  };
+
+  app.use("/api/auth/login", authRateLimit, csrfGuard);
+  app.use("/api/auth/register", authRateLimit, csrfGuard);
+  app.use("/api/auth/login-phone", authRateLimit, csrfGuard);
+  app.use("/api/auth/register-phone", authRateLimit, csrfGuard);
+  app.use("/api/auth/send-otp", strictRateLimit, csrfGuard);
 
   // Auth routes — email-based registration
   app.post("/api/auth/register", async (req, res) => {
@@ -1108,68 +1143,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Subscription routes
+  // Subscription route — thin wrapper, uses activateSubscriptionForUser defined below
   app.post("/api/subscription/subscribe", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       const { planId } = req.body;
-
-      if (!planId) {
-        return res.status(400).json({ message: "Plan ID is required" });
-      }
-
-      let tier, endDate;
-
-      // Set subscription details based on the plan
-      switch (planId) {
-        case "basic":
-          tier = "basic";
-          // 1 month from now
-          endDate = new Date();
-          endDate.setMonth(endDate.getMonth() + 1);
-          break;
-        case "silver":
-          tier = "silver";
-          // 1 month from now
-          endDate = new Date();
-          endDate.setMonth(endDate.getMonth() + 1);
-          break;
-        case "diamond":
-          tier = "diamond";
-          // 1 month from now
-          endDate = new Date();
-          endDate.setMonth(endDate.getMonth() + 1);
-          break;
-        case "gold":
-          tier = "gold";
-          // 1 year from now
-          endDate = new Date();
-          endDate.setFullYear(endDate.getFullYear() + 1);
-          break;
-        default:
-          return res.status(400).json({ message: "Invalid plan ID" });
-      }
-
-      // Create subscription
-      const subscription = await storage.createSubscription({
-        userId: user.id,
-        tier,
-        startDate: new Date().toISOString(),
-        endDate: endDate.toISOString(),
-        autoRenew: true,
-        status: "active",
-      });
-
-      // Update user subscription
-      await storage.updateUser(user.id, {
-        subscriptionTier: tier,
-        subscriptionExpiry: endDate.toISOString(),
-      });
-
-      res.json({ success: true, subscription });
-    } catch (error) {
+      if (!planId) return res.status(400).json({ message: "Plan ID is required" });
+      await activateSubscriptionForUser(user.id, planId);
+      res.json({ success: true });
+    } catch (error: any) {
       console.error("Subscribe error:", error);
-      res.status(500).json({ message: "Failed to create subscription" });
+      res.status(error.message === "Invalid plan" ? 400 : 500).json({ message: error.message || "Failed to create subscription" });
     }
   });
 
@@ -1468,17 +1452,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  /** Helper: activate a subscription tier for a user */
+  /** Helper: activate a subscription tier for a user.
+   *  Durations: basic=1mo, silver=3mo, gold=7mo, diamond=1mo */
   async function activateSubscriptionForUser(userId: number, planId: string) {
     const tierMap: Record<string, string> = { basic: "basic", silver: "silver", diamond: "diamond", gold: "gold" };
     const tier = tierMap[planId];
     if (!tier) throw new Error("Invalid plan");
+    const durationMonths: Record<string, number> = { basic: 1, silver: 3, gold: 7, diamond: 1 };
     const endDate = new Date();
-    if (planId === "gold") {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    } else {
-      endDate.setMonth(endDate.getMonth() + 1);
-    }
+    endDate.setMonth(endDate.getMonth() + (durationMonths[planId] ?? 1));
     await storage.createSubscription({
       userId,
       tier: tier as any,
