@@ -24,22 +24,12 @@ export function loadFaceModels(onProgress?: (label: string) => void): Promise<vo
   return loadPromise;
 }
 
-// Higher resolution for better accuracy on mobile cameras
-const liveDetectorOpts  = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.35 });
-// For ID photos: start with the high-accuracy SSD model, lower threshold since photos are sharp
-const idDetectorPrimary = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
-// Fallback: TinyFaceDetector with very low threshold for harder ID photos
-const idDetectorFallback = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.25 });
+// Detector options
+const liveDetectorOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.35 });
+const photoDetectorPrimary = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+const photoDetectorFallback = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.25 });
 
-function eyeAspectRatio(eye: faceapi.Point[]): number {
-  const dist = (a: faceapi.Point, b: faceapi.Point) =>
-    Math.hypot(a.x - b.x, a.y - b.y);
-  const v1 = dist(eye[1], eye[5]);
-  const v2 = dist(eye[2], eye[4]);
-  const h  = dist(eye[0], eye[3]);
-  return h > 0 ? (v1 + v2) / (2 * h) : 0.3;
-}
-
+// ── Head-turn yaw ──────────────────────────────────────────────────────────────
 function noseYawAngle(landmarks: faceapi.FaceLandmarks68): number {
   const nose = landmarks.getNose();
   const jaw  = landmarks.getJawOutline();
@@ -52,11 +42,26 @@ function noseYawAngle(landmarks: faceapi.FaceLandmarks68): number {
   return (noseTip.x - midX) / halfW;
 }
 
+// ── Mouth aspect ratio (smile / open mouth detection) ─────────────────────────
+function mouthAspectRatio(landmarks: faceapi.FaceLandmarks68): number {
+  const mouth = landmarks.getMouth(); // 20 points: outer 0-11, inner 12-19
+  if (mouth.length < 20) return 0;
+  // Horizontal: left corner (0) → right corner (6)
+  const leftCorner  = mouth[0];
+  const rightCorner = mouth[6];
+  const horizontal = Math.hypot(rightCorner.x - leftCorner.x, rightCorner.y - leftCorner.y);
+  // Vertical: inner top (13, 14) vs inner bottom (17, 18)
+  const topY    = (mouth[13].y + mouth[14].y) / 2;
+  const bottomY = (mouth[17].y + mouth[18].y) / 2;
+  const vertical = Math.abs(bottomY - topY);
+  return horizontal > 0 ? vertical / horizontal : 0;
+}
+
+// ── LivenessProgress ──────────────────────────────────────────────────────────
 export interface LivenessProgress {
-  blinks: number;
-  turnedLeft: boolean;
-  turnedRight: boolean;
   faceDetected: boolean;
+  smiled: boolean;
+  turned: boolean;
   message: string;
   percent: number;
 }
@@ -66,38 +71,34 @@ export interface LivenessResult {
   snapshotDataUrl: string;
 }
 
-const REQUIRED_BLINKS = 2;
+// Thresholds
+const MAR_SMILE   = 0.28;  // mouth aspect ratio for an open smile
+const YAW_TURN    = 0.15;  // 15% nose offset from centre counts as a turn
+const TIMEOUT_MS  = 90_000;
 
-// EAR thresholds — tuned for mobile cameras with variable lighting
-const EAR_CLOSED       = 0.22;  // eye "closed" below this
-const EAR_OPEN         = 0.27;  // eye "open" again above this
-
-// Head-turn thresholds — small turns are enough on mobile
-const YAW_LEFT         = -0.16;
-const YAW_RIGHT        =  0.16;
-
-// Min ms between two counted blinks to avoid double-counting
-const BLINK_COOLDOWN_MS = 400;
-
+/**
+ * New liveness check — three steps:
+ *  1. Face detected and stable (hold for ~1.5 s)
+ *  2. Smile! (open mouth / show teeth)
+ *  3. Turn head slightly in any direction
+ */
 export async function runLivenessCheck(
   videoEl: HTMLVideoElement,
   onProgress: (p: LivenessProgress) => void,
   signal?: AbortSignal,
 ): Promise<LivenessResult> {
-  let blinks = 0;
-  let eyeState: 'open' | 'closed' = 'open';
-  let lastBlinkAt = 0;
-  let turnedLeft  = false;
-  let turnedRight = false;
-  let bestSnapshot: { descriptor: Float32Array; canvas: HTMLCanvasElement; score: number } | null = null;
+  let smiled  = false;
+  let turned  = false;
+  let faceStableFrames = 0;
+  const STABLE_FRAMES_REQUIRED = 8; // ~0.5 s at 60 ms/frame
 
-  const start      = Date.now();
-  const TIMEOUT_MS = 90_000; // 90 s — extra time for slower phones
+  let bestSnapshot: { descriptor: Float32Array; canvas: HTMLCanvasElement; score: number } | null = null;
+  const start = Date.now();
 
   while (true) {
     if (signal?.aborted) throw new Error('Liveness check cancelled');
     if (Date.now() - start > TIMEOUT_MS) {
-      throw new Error('Verification timed out. Move to a brighter area, keep your face centered, and try again.');
+      throw new Error('Verification timed out. Move to a brighter area, keep your face centred, and try again.');
     }
 
     const det = await faceapi
@@ -105,44 +106,22 @@ export async function runLivenessCheck(
       .withFaceLandmarks()
       .withFaceDescriptor();
 
-    const blinkProgress = Math.min(1, blinks / REQUIRED_BLINKS) * 50;
-    const turnProgress  = ((turnedLeft ? 1 : 0) + (turnedRight ? 1 : 0)) * 25;
-    const percent       = Math.min(99, Math.round(blinkProgress + turnProgress));
-
     if (!det) {
-      onProgress({
-        blinks, turnedLeft, turnedRight,
-        faceDetected: false,
-        message: 'Center your face in the circle — good lighting helps',
-        percent,
-      });
+      faceStableFrames = 0;
+      onProgress({ faceDetected: false, smiled, turned, message: 'Centre your face in the circle — good lighting helps', percent: 0 });
       await sleep(80);
       continue;
     }
 
-    const lm  = det.landmarks;
-    const leftEAR  = eyeAspectRatio(lm.getLeftEye());
-    const rightEAR = eyeAspectRatio(lm.getRightEye());
-    const ear = (leftEAR + rightEAR) / 2;
-    const yaw = noseYawAngle(lm);
-    const now = Date.now();
+    faceStableFrames++;
 
-    // Blink state machine with cooldown
-    if (eyeState === 'open' && ear < EAR_CLOSED) {
-      eyeState = 'closed';
-    } else if (eyeState === 'closed' && ear > EAR_OPEN) {
-      eyeState = 'open';
-      if (now - lastBlinkAt >= BLINK_COOLDOWN_MS) {
-        blinks += 1;
-        lastBlinkAt = now;
-      }
-    }
+    const mar = mouthAspectRatio(det.landmarks);
+    const yaw = noseYawAngle(det.landmarks);
 
-    // Head turns
-    if (yaw < YAW_LEFT)  turnedLeft  = true;
-    if (yaw > YAW_RIGHT) turnedRight = true;
+    if (mar > MAR_SMILE) smiled = true;
+    if (Math.abs(yaw) > YAW_TURN) turned = true;
 
-    // Keep the best-quality snapshot for the face descriptor
+    // Track best snapshot
     if (!bestSnapshot || det.detection.score > bestSnapshot.score) {
       const canvas = document.createElement('canvas');
       canvas.width  = videoEl.videoWidth  || 640;
@@ -152,16 +131,28 @@ export async function runLivenessCheck(
       bestSnapshot = { descriptor: det.descriptor, canvas, score: det.detection.score };
     }
 
-    let message = 'Hold still...';
-    if (blinks < REQUIRED_BLINKS) message = `Blink slowly and fully (${blinks}/${REQUIRED_BLINKS} done)`;
-    else if (!turnedLeft)         message = '↩ Slowly turn your head LEFT';
-    else if (!turnedRight)        message = '↪ Slowly turn your head RIGHT';
-    else                          message = 'Almost done...';
+    // Progress calculation
+    const stableProgress = Math.min(1, faceStableFrames / STABLE_FRAMES_REQUIRED) * 30;
+    const smileProgress  = smiled ? 35 : 0;
+    const turnProgress   = turned ? 35 : 0;
+    const percent = Math.min(99, Math.round(stableProgress + smileProgress + turnProgress));
 
-    onProgress({ blinks, turnedLeft, turnedRight, faceDetected: true, message, percent });
+    // Step message
+    let message: string;
+    if (faceStableFrames < STABLE_FRAMES_REQUIRED) {
+      message = 'Hold still — positioning your face...';
+    } else if (!smiled) {
+      message = '😄 Give us a big smile!';
+    } else if (!turned) {
+      message = '↔ Turn your head slightly left or right';
+    } else {
+      message = 'Almost done...';
+    }
 
-    if (blinks >= REQUIRED_BLINKS && turnedLeft && turnedRight) {
-      onProgress({ blinks, turnedLeft, turnedRight, faceDetected: true, message: 'Verified! ✓', percent: 100 });
+    onProgress({ faceDetected: true, smiled, turned, message, percent });
+
+    if (faceStableFrames >= STABLE_FRAMES_REQUIRED && smiled && turned) {
+      onProgress({ faceDetected: true, smiled, turned, message: 'Verified! ✓', percent: 100 });
       return {
         descriptor: Array.from(bestSnapshot!.descriptor),
         snapshotDataUrl: bestSnapshot!.canvas.toDataURL('image/jpeg', 0.85),
@@ -172,38 +163,46 @@ export async function runLivenessCheck(
   }
 }
 
-/** Detect a face in an ID document photo.
- *  Tries SSD Mobilenet first (better for photos), falls back to TinyFaceDetector
- *  with a relaxed threshold if the first pass fails. */
+/** Detect a face in a photo file (profile photo comparison). */
 export async function detectFaceInImageFile(file: File): Promise<{ descriptor: number[]; previewDataUrl: string }> {
   const previewDataUrl = await fileToDataUrl(file);
   const img = await loadImage(previewDataUrl);
 
-  // Pass 1 — SSD Mobilenet (high accuracy on still photos)
   let det = await faceapi
-    .detectSingleFace(img, idDetectorPrimary)
+    .detectSingleFace(img, photoDetectorPrimary)
     .withFaceLandmarks()
     .withFaceDescriptor();
 
-  // Pass 2 — TinyFaceDetector with higher inputSize and lower threshold
   if (!det) {
     det = await faceapi
-      .detectSingleFace(img, idDetectorFallback)
+      .detectSingleFace(img, photoDetectorFallback)
       .withFaceLandmarks()
       .withFaceDescriptor();
   }
 
   if (!det) {
-    throw new Error(
-      "No face found on the ID photo. Tips: ensure the photo side is face-up, use good lighting, avoid glare, " +
-      "and make sure your face on the ID is clearly visible and not cropped."
-    );
+    throw new Error("No face found in the photo. Use good lighting, avoid glare, and ensure your face is clearly visible.");
   }
 
   return {
     descriptor: Array.from(det.descriptor),
     previewDataUrl: shrinkDataUrl(img, 800),
   };
+}
+
+/** Detect a face in a data URL (used for profile photo comparison from URL). */
+export async function detectFaceInDataUrl(dataUrl: string): Promise<number[] | null> {
+  try {
+    const img = await loadImage(dataUrl);
+    const det = await faceapi
+      .detectSingleFace(img, photoDetectorPrimary)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+    if (!det) return null;
+    return Array.from(det.descriptor);
+  } catch {
+    return null;
+  }
 }
 
 export function compareDescriptors(a: number[], b: number[]): number {
@@ -232,6 +231,7 @@ function fileToDataUrl(file: File): Promise<string> {
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = 'anonymous';
     img.onload  = () => resolve(img);
     img.onerror = () => reject(new Error('Could not load image'));
     img.src = src;

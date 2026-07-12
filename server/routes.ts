@@ -156,6 +156,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.updateUser(user.id, { password: hashed });
         }
 
+        if ((user as any).isBanned) {
+          return done(null, false, { message: "This account has been permanently banned. Contact support if you believe this is an error." });
+        }
         if ((user as any).isSuspended) {
           return done(null, false, { message: "This account has been suspended. Please contact support." });
         }
@@ -519,18 +522,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(safeUser(user));
   });
 
-  // Verification route — real on-device face match + duplicate detection
+  // Verification route — selfie liveness + phone OTP, no government ID required
   app.post("/api/verification", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       const {
         selfieDescriptor,
-        idDescriptor,
-        verificationData,
-        idImage,
-        nationalId,
-        nationalIdType,
+        verificationData,   // base64 selfie image (stored for admin review)
+        deviceId,
+        phoneVerified,
       } = req.body;
+
+      // ── Device ban check ─────────────────────────────────────────────────────
+      if (deviceId) {
+        const banned = await storage.isDeviceBanned(deviceId);
+        if (banned) {
+          await storage.updateUser(user.id, { isBanned: true, bannedReason: "Device is banned" } as any);
+          return res.status(403).json({ message: "This device has been blocked. Contact support if you believe this is a mistake.", banned: true });
+        }
+        // Store device ID on user record
+        await storage.updateUser(user.id, { deviceId } as any);
+      }
 
       const isDescriptor = (d: any) =>
         Array.isArray(d) && d.length === 128 && d.every((n) => typeof n === "number" && Number.isFinite(n));
@@ -538,33 +550,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isDescriptor(selfieDescriptor)) {
         return res.status(400).json({ message: "Live face scan was not completed. Please retry the face scan." });
       }
-      if (!isDescriptor(idDescriptor)) {
-        return res.status(400).json({ message: "We couldn't detect a face on your ID document. Please upload a clearer photo." });
-      }
-      if (!nationalId || String(nationalId).trim().length < 4) {
-        return res.status(400).json({ message: "National ID is required." });
-      }
 
-      // Euclidean distance between selfie and ID face
-      const FACE_MATCH_THRESHOLD = 0.6; // face-api.js standard
-      const distance = Math.sqrt(
-        selfieDescriptor.reduce((s: number, v: number, i: number) => s + (v - idDescriptor[i]) ** 2, 0),
-      );
-
-      if (distance > FACE_MATCH_THRESHOLD) {
-        await storage.createVerification({
-          userId: user.id,
-          status: "rejected",
-          verificationData: verificationData || null,
-          rejectedReason: `Face on ID does not match selfie (distance=${distance.toFixed(3)})`,
-        });
-        return res.status(400).json({
-          message: "The face in your selfie doesn't match the face on your ID. Please try again with a clearer ID photo.",
-        });
-      }
-
-      // Duplicate-account check: reject if another verified user has a near-identical face
-      const DUP_THRESHOLD = 0.45;
+      // ── Duplicate-account check ───────────────────────────────────────────────
+      const DUP_THRESHOLD = 0.42;
       const allUsers = await storage.listUsers();
       for (const other of allUsers) {
         if (other.id === user.id) continue;
@@ -581,52 +569,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
             verificationData: verificationData || null,
             rejectedReason: `Duplicate face detected — already verified as user #${other.id}`,
           });
+          // Auto-ban device on duplicate attempt
+          if (deviceId) {
+            await storage.createDeviceBan(deviceId, `Duplicate account attempt (matched user #${other.id})`, undefined, req.ip);
+            await storage.updateUser(user.id, { isBanned: true, bannedReason: "Duplicate account" } as any);
+          }
           return res.status(400).json({
             message: "This face is already registered to another account. Each person may only have one account on Clever Date Match.",
           });
         }
       }
 
-      // Approved
+      // ── Profile photo face comparison (if user already has photos) ───────────
+      // Selfie descriptors from profile photos may be sent client-side for comparison
+      const profilePhotoDescriptors: number[][] = req.body.profilePhotoDescriptors || [];
+      let bestMatchScore: number | null = null;
+      let photoMismatch = false;
+
+      if (profilePhotoDescriptors.length > 0) {
+        const CLEAR_MISMATCH = 0.65;
+        const BORDERLINE     = 0.50;
+
+        let bestDistance = Infinity;
+        for (const pd of profilePhotoDescriptors) {
+          if (!isDescriptor(pd)) continue;
+          const d = Math.sqrt(selfieDescriptor.reduce((s: number, v: number, i: number) => s + (v - pd[i]) ** 2, 0));
+          if (d < bestDistance) bestDistance = d;
+        }
+        bestMatchScore = bestDistance;
+
+        if (bestDistance > CLEAR_MISMATCH) {
+          // Clear mismatch — selfie doesn't match profile photos
+          if (deviceId) {
+            await storage.createDeviceBan(deviceId, `Profile photo face mismatch (distance=${bestDistance.toFixed(3)})`, undefined, req.ip);
+          }
+          await storage.createVerification({
+            userId: user.id,
+            status: "rejected",
+            verificationData: verificationData || null,
+            faceMatchScore: String(bestDistance.toFixed(3)),
+            rejectedReason: `Selfie does not match profile photos (distance=${bestDistance.toFixed(3)})`,
+          });
+          await storage.updateUser(user.id, { isSuspended: true, suspendedReason: "Verification failed: selfie doesn't match profile photos" } as any);
+          return res.status(400).json({
+            message: "Your selfie doesn't match your profile photos. Please use photos that show your real face.",
+          });
+        }
+
+        if (bestDistance > BORDERLINE) {
+          // Borderline — flag for manual review
+          photoMismatch = true;
+        }
+      }
+
+      // ── Save selfie photo to user record for admin review ────────────────────
+      if (verificationData) {
+        await storage.updateUser(user.id, { selfiePhoto: verificationData } as any);
+      }
+
+      // ── Mark verified (or pending review for borderline cases) ───────────────
+      if (photoMismatch) {
+        await storage.createVerification({
+          userId: user.id,
+          status: "pending_review",
+          verificationData: verificationData || null,
+          faceMatchScore: bestMatchScore !== null ? String(bestMatchScore.toFixed(3)) : null,
+        });
+        await storage.updateUser(user.id, { isSuspended: true, suspendedReason: "Pending identity review" } as any);
+        return res.json({ success: true, status: "pending_review", message: "Your verification is under review. You'll be notified once approved." });
+      }
+
       await storage.createVerification({
         userId: user.id,
         status: "approved",
         verificationData: verificationData || null,
-        approvedAt: new Date().toISOString(),
+        faceMatchScore: bestMatchScore !== null ? String(bestMatchScore.toFixed(3)) : null,
+        approvedAt: new Date(),
       });
-
-      const emailCode = generateCode();
-      const phoneCode = generateCode();
-      req.session.emailCode = emailCode;
-      req.session.emailCodeExpiresAt = Date.now() + CODE_TTL_MS;
-      req.session.phoneCode = phoneCode;
-      req.session.phoneCodeExpiresAt = Date.now() + CODE_TTL_MS;
-      req.session.pendingUserId = user.id;
 
       await storage.updateUser(user.id, {
         isVerified: true,
-        nationalIdNumber: String(nationalId).trim(),
-        nationalIdType: nationalIdType || "National ID",
         faceDescriptor: selfieDescriptor,
+        isPhoneVerified: !!phoneVerified,
       } as any);
-
-      // Send the email code asynchronously — don't block the response
-      let emailSent = false;
-      if (user.email) {
-        const result = await sendVerificationCode(user.email, emailCode, user.firstName);
-        emailSent = result.sent;
-        if (!result.sent) console.warn(`[verify] Email code for ${user.email}: ${emailCode} (delivery failed: ${result.reason})`);
-      } else {
-        console.log(`[verify] No email on user, code: ${emailCode}`);
-      }
-      // Phone code: still log until SMS is wired up
-      console.log(`[verify] Phone code for user #${user.id}: ${phoneCode}`);
 
       return res.json({
         success: true,
         message: "Verification successful",
-        matchDistance: Number(distance.toFixed(3)),
-        emailSent,
       });
     } catch (error: any) {
       console.error("Verification error:", error);
@@ -1429,11 +1458,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/users/:id/verify", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
-      const updated = await storage.updateUser(id, { isVerified: true } as any);
+      const updated = await storage.updateUser(id, { isVerified: true, isSuspended: false } as any);
+      // Also update latest verification record to approved
+      const v = await storage.getVerificationByUserId(id);
+      if (v) {
+        // We don't have an updateVerification method yet, but we can add a new approved record
+        await storage.createVerification({ userId: id, status: "approved", approvedAt: new Date() });
+      }
       res.json({ success: true, user: { id: updated.id, isVerified: updated.isVerified } });
     } catch (e: any) {
       console.error("Admin verify user error:", e);
       res.status(500).json({ message: "Failed to verify user" });
+    }
+  });
+
+  // ── Admin verification review endpoints ──────────────────────────────────────
+
+  // Get all verifications (with user data)
+  app.get("/api/admin/verifications", requireAdmin, async (_req, res) => {
+    try {
+      const verifications = await storage.getAllVerifications();
+      res.json(verifications);
+    } catch (e: any) {
+      console.error("Admin verifications error:", e);
+      res.status(500).json({ message: "Failed to fetch verifications" });
+    }
+  });
+
+  // Get verifications pending review
+  app.get("/api/admin/verifications/review", requireAdmin, async (_req, res) => {
+    try {
+      const verifications = await storage.listVerificationsForReview();
+      res.json(verifications);
+    } catch (e: any) {
+      console.error("Admin verifications review error:", e);
+      res.status(500).json({ message: "Failed to fetch verification queue" });
+    }
+  });
+
+  // Hard-ban a user (+ optionally ban their device)
+  app.post("/api/admin/users/:id/ban", requireAdmin, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const { reason, banDevice } = req.body || {};
+      if (id === req.user.id) {
+        return res.status(400).json({ message: "You cannot ban your own account." });
+      }
+      const updated = await storage.updateUser(id, {
+        isBanned: true,
+        bannedReason: reason || "Banned by admin",
+        isSuspended: true,
+        suspendedReason: reason || "Banned",
+      } as any);
+      // Optionally ban their device
+      if (banDevice) {
+        const targetUser = await storage.getUser(id);
+        const deviceId = (targetUser as any)?.deviceId;
+        if (deviceId) {
+          await storage.createDeviceBan(deviceId, reason || "Banned by admin", req.user.id, req.ip);
+        }
+      }
+      res.json({ success: true, user: { id: updated.id, isBanned: (updated as any).isBanned } });
+    } catch (e: any) {
+      console.error("Ban user error:", e);
+      res.status(500).json({ message: "Failed to ban user" });
+    }
+  });
+
+  // Unban a user
+  app.post("/api/admin/users/:id/unban", requireAdmin, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const updated = await storage.updateUser(id, { isBanned: false, bannedReason: null, isSuspended: false, suspendedReason: null } as any);
+      res.json({ success: true, user: { id: updated.id } });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to unban user" });
+    }
+  });
+
+  // ── Device ban admin routes ─────────────────────────────────────────────────
+
+  // List all device bans
+  app.get("/api/admin/device-bans", requireAdmin, async (_req, res) => {
+    try {
+      const bans = await storage.listDeviceBans();
+      res.json(bans);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch device bans" });
+    }
+  });
+
+  // Create a device ban manually
+  app.post("/api/admin/device-bans", requireAdmin, async (req: any, res) => {
+    try {
+      const { deviceId, reason } = req.body;
+      if (!deviceId) return res.status(400).json({ message: "deviceId is required" });
+      const ban = await storage.createDeviceBan(deviceId, reason || "Manually banned", req.user.id, req.ip);
+      res.json(ban);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to create device ban" });
+    }
+  });
+
+  // Remove a device ban
+  app.delete("/api/admin/device-bans/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      await storage.removeDeviceBan(id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to remove device ban" });
     }
   });
 

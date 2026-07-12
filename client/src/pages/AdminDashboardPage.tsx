@@ -40,6 +40,11 @@ import {
   Trash2,
   Plus,
   Radio,
+  Shield,
+  ShieldAlert,
+  UserX,
+  UserCheck,
+  MonitorOff,
 } from 'lucide-react';
 
 type AdminStats = {
@@ -67,6 +72,29 @@ type AdminUser = {
   subscriptionTier: string;
   walletBalance: string;
   createdAt: string;
+};
+
+type VerificationRecord = {
+  id: number;
+  userId: number;
+  status: string;
+  faceMatchScore: string | null;
+  verificationData: string | null;
+  verificationMethod: string | null;
+  rejectedReason: string | null;
+  createdAt: string;
+  user?: {
+    id: number;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+    phone: string | null;
+    profilePicture: string | null;
+    selfiePhoto: string | null;
+    deviceId: string | null;
+    isSuspended: boolean;
+    isBanned: boolean;
+  };
 };
 
 type FlutterwaveStatus = {
@@ -166,6 +194,16 @@ export default function AdminDashboardPage() {
     },
   });
 
+  const verificationsQuery = useQuery<VerificationRecord[]>({
+    queryKey: ['/api/admin/verifications'],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const res = await fetch('/api/admin/verifications', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+  });
+
   // ── Mutations ─────────────────────────────────────────────────────────────
 
   const suspendMutation = useMutation({
@@ -232,6 +270,29 @@ export default function AdminDashboardPage() {
     onError: (e: any) => toast({ variant: 'destructive', title: 'Failed to toggle', description: e?.message }),
   });
 
+  const approveVerificationMutation = useMutation({
+    mutationFn: async (userId: number) => apiRequest('POST', `/api/admin/users/${userId}/verify`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/verifications'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
+      toast({ title: 'User approved ✓' });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed', description: e?.message }),
+  });
+
+  const banUserMutation = useMutation({
+    mutationFn: async ({ id, reason, banDevice }: { id: number; reason: string; banDevice: boolean }) =>
+      apiRequest('POST', `/api/admin/users/${id}/ban`, { reason, banDevice }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/verifications'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
+      toast({ title: 'User banned' });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Failed', description: e?.message }),
+  });
+
   const handleGift = () => {
     const uid = parseInt(giftUserId, 10);
     const d = parseInt(giftDays, 10);
@@ -260,6 +321,9 @@ export default function AdminDashboardPage() {
   const users = usersQuery.data || [];
   const flw = flwQuery.data;
   const socials = socialsQuery.data || [];
+  const verifications = verificationsQuery.data || [];
+  const pendingVerifications = verifications.filter(v => v.status === 'pending_review' || v.status === 'pending');
+  const recentVerifications = verifications.slice(0, 50);
 
   const statCards = [
     { label: 'Total accounts', value: stats?.users ?? '–', color: 'bg-blue-50 text-blue-700', icon: 'ri-user-line' },
@@ -551,6 +615,211 @@ export default function AdminDashboardPage() {
             <p className="text-xs text-gray-500 mt-3">
               Tip: click the "Gift" button next to any user in the table below to pre-fill the ID.
             </p>
+          </CardContent>
+        </Card>
+
+        {/* ── Verification Queue ────────────────────────────── */}
+        <Card className={`${pendingVerifications.length > 0 ? 'border-amber-300 bg-amber-50/30' : 'border-gray-200'}`}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <ShieldAlert className={`h-5 w-5 ${pendingVerifications.length > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
+              <span className={pendingVerifications.length > 0 ? 'text-amber-800' : ''}>
+                Identity Verification
+              </span>
+              {pendingVerifications.length > 0 && (
+                <Badge className="bg-amber-500 text-white ml-1">{pendingVerifications.length} pending</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {verificationsQuery.isLoading ? (
+              <p className="text-sm text-gray-500 py-4 text-center">Loading verification data...</p>
+            ) : recentVerifications.length === 0 ? (
+              <p className="text-sm text-gray-500 py-4 text-center">No verifications yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {/* Pending review section */}
+                {pendingVerifications.length > 0 && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-amber-700 flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4" /> Needs your review
+                    </p>
+                    {pendingVerifications.map((v) => (
+                      <div key={v.id} className="bg-white border-2 border-amber-300 rounded-2xl p-4 shadow-sm">
+                        <div className="flex gap-4 items-start">
+                          {/* Selfie */}
+                          <div className="flex-none">
+                            <p className="text-xs text-gray-500 mb-1 text-center">Selfie</p>
+                            {v.verificationData ? (
+                              <img
+                                src={`data:image/jpeg;base64,${v.verificationData}`}
+                                alt="Selfie"
+                                className="w-20 h-20 rounded-xl object-cover border-2 border-amber-200"
+                              />
+                            ) : v.user?.selfiePhoto ? (
+                              <img
+                                src={`data:image/jpeg;base64,${v.user.selfiePhoto}`}
+                                alt="Selfie"
+                                className="w-20 h-20 rounded-xl object-cover border-2 border-amber-200"
+                              />
+                            ) : (
+                              <div className="w-20 h-20 rounded-xl bg-gray-100 flex items-center justify-center border">
+                                <Shield className="w-8 h-8 text-gray-300" />
+                              </div>
+                            )}
+                          </div>
+                          {/* Profile photo */}
+                          <div className="flex-none">
+                            <p className="text-xs text-gray-500 mb-1 text-center">Profile</p>
+                            {v.user?.profilePicture ? (
+                              <img
+                                src={v.user.profilePicture}
+                                alt="Profile"
+                                className="w-20 h-20 rounded-xl object-cover border-2 border-gray-200"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }}
+                              />
+                            ) : (
+                              <div className="w-20 h-20 rounded-xl bg-gray-100 flex items-center justify-center border">
+                                <span className="text-gray-300 text-xs">No photo</span>
+                              </div>
+                            )}
+                          </div>
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-gray-800">
+                                {v.user ? `${v.user.firstName || ''} ${v.user.lastName || ''}`.trim() || `User #${v.userId}` : `User #${v.userId}`}
+                              </p>
+                              <Badge variant={v.status === 'approved' ? 'default' : v.status === 'rejected' ? 'destructive' : 'secondary'} className={v.status === 'pending_review' ? 'bg-amber-100 text-amber-800 border-amber-300' : ''}>
+                                {v.status.replace('_', ' ')}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5">{v.user?.email || v.user?.phone || 'No contact'}</p>
+                            {v.faceMatchScore && (
+                              <p className="text-xs mt-1">
+                                <span className="font-medium text-gray-600">Face match score: </span>
+                                <span className={parseFloat(v.faceMatchScore) < 0.45 ? 'text-green-600 font-bold' : parseFloat(v.faceMatchScore) < 0.65 ? 'text-amber-600 font-bold' : 'text-red-600 font-bold'}>
+                                  {v.faceMatchScore} {parseFloat(v.faceMatchScore) < 0.45 ? '✓ Good' : parseFloat(v.faceMatchScore) < 0.65 ? '⚠ Borderline' : '✗ Mismatch'}
+                                </span>
+                              </p>
+                            )}
+                            {v.rejectedReason && <p className="text-xs text-red-500 mt-0.5 truncate">{v.rejectedReason}</p>}
+                            {v.user?.deviceId && <p className="text-xs text-gray-400 mt-0.5 font-mono truncate">Device: {v.user.deviceId}</p>}
+                            <p className="text-xs text-gray-400 mt-0.5">{new Date(v.createdAt).toLocaleString()}</p>
+
+                            {/* Action buttons */}
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white h-8 text-xs"
+                                onClick={() => approveVerificationMutation.mutate(v.userId)}
+                                disabled={approveVerificationMutation.isPending}
+                              >
+                                <UserCheck className="w-3.5 h-3.5 mr-1" /> Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-600 border-red-300 hover:bg-red-50 h-8 text-xs"
+                                onClick={() => {
+                                  const reason = window.prompt('Ban reason?', 'Failed identity verification');
+                                  if (reason !== null) banUserMutation.mutate({ id: v.userId, reason, banDevice: false });
+                                }}
+                                disabled={banUserMutation.isPending}
+                              >
+                                <UserX className="w-3.5 h-3.5 mr-1" /> Ban
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-700 border-red-400 hover:bg-red-50 h-8 text-xs"
+                                onClick={() => {
+                                  const reason = window.prompt('Ban reason (will also ban device)?', 'Failed identity verification');
+                                  if (reason !== null) banUserMutation.mutate({ id: v.userId, reason, banDevice: true });
+                                }}
+                                disabled={banUserMutation.isPending}
+                              >
+                                <MonitorOff className="w-3.5 h-3.5 mr-1" /> Ban + Device
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs"
+                                onClick={() => suspendMutation.mutate({ id: v.userId, suspend: false })}
+                                disabled={suspendMutation.isPending}
+                              >
+                                Unsuspend
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Recent verifications summary */}
+                <details className="group">
+                  <summary className="cursor-pointer text-sm text-blue-600 hover:text-blue-800 list-none flex items-center gap-1">
+                    <Shield className="w-4 h-4" />
+                    View all recent verifications ({recentVerifications.length})
+                    <span className="text-xs text-gray-400 ml-1 group-open:hidden">▶</span>
+                    <span className="text-xs text-gray-400 ml-1 hidden group-open:inline">▼</span>
+                  </summary>
+                  <div className="mt-3 overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>User</TableHead>
+                          <TableHead>Method</TableHead>
+                          <TableHead>Score</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {recentVerifications.map((v) => (
+                          <TableRow key={v.id}>
+                            <TableCell className="text-sm">
+                              <div className="font-medium">{v.user ? `${v.user.firstName || ''} ${v.user.lastName || ''}`.trim() || `#${v.userId}` : `#${v.userId}`}</div>
+                              <div className="text-xs text-gray-400">{v.user?.email || v.user?.phone || ''}</div>
+                            </TableCell>
+                            <TableCell className="text-xs">{v.verificationMethod || 'selfie+phone'}</TableCell>
+                            <TableCell className="text-xs font-mono">{v.faceMatchScore || '—'}</TableCell>
+                            <TableCell>
+                              <Badge variant={v.status === 'approved' ? 'default' : v.status === 'rejected' ? 'destructive' : 'secondary'} className={`text-xs ${v.status === 'pending_review' ? 'bg-amber-100 text-amber-800' : v.status === 'approved' ? 'bg-green-100 text-green-800' : ''}`}>
+                                {v.status.replace('_', ' ')}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-gray-500">{new Date(v.createdAt).toLocaleDateString()}</TableCell>
+                            <TableCell className="space-x-1">
+                              {v.status !== 'approved' && (
+                                <Button size="sm" variant="outline" className="text-xs h-7 text-green-700 border-green-300"
+                                  onClick={() => approveVerificationMutation.mutate(v.userId)}
+                                  disabled={approveVerificationMutation.isPending}>
+                                  Approve
+                                </Button>
+                              )}
+                              {v.status !== 'rejected' && (
+                                <Button size="sm" variant="outline" className="text-xs h-7 text-red-600 border-red-300"
+                                  onClick={() => {
+                                    const reason = window.prompt('Ban reason?', 'Policy violation');
+                                    if (reason !== null) banUserMutation.mutate({ id: v.userId, reason, banDevice: false });
+                                  }}
+                                  disabled={banUserMutation.isPending}>
+                                  Ban
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </details>
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -2,3 +2,4 @@
 - [Wouter nest routing](wouter-nest-routing.md) — inside nest() context, use ~/path for absolute hrefs; plain /path is relative to nest base and doubles up.
 - [Flutterwave + trial system](flutterwave-trial.md) — payment flow, first-100-user trial logic, card error admin notification
 - [Query setup quirk](query-setup.md) — no global defaultQueryFn; every useQuery must define its own queryFn explicitly
+- [Identity verification design](identity-verification.md) — Section 1 done: no gov ID, selfie uses smile+headturn (not blinks), device fingerprint banning, isBanned vs isSuspended, admin queue with approve/ban/device-ban.

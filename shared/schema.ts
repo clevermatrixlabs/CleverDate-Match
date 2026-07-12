@@ -33,7 +33,11 @@ export const users = pgTable("users", {
   isAdmin: boolean("is_admin").default(false),
   isSuspended: boolean("is_suspended").default(false),
   suspendedReason: text("suspended_reason"),
+  isBanned: boolean("is_banned").default(false),
+  bannedReason: text("banned_reason"),
   faceDescriptor: real("face_descriptor").array(),
+  selfiePhoto: text("selfie_photo"),
+  deviceId: text("device_id"),
   intention: text("intention", { enum: ["marriage", "long-term", "getting-to-know"] }),
   minAgePreference: integer("min_age_preference").default(18),
   maxAgePreference: integer("max_age_preference").default(60),
@@ -50,11 +54,23 @@ export const users = pgTable("users", {
 export const verifications = pgTable("verifications", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  status: text("status", { enum: ["pending", "approved", "rejected"] }).default("pending"),
+  status: text("status", { enum: ["pending", "approved", "rejected", "pending_review"] }).default("pending"),
   verificationData: text("verification_data"),
+  faceMatchScore: decimal("face_match_score", { precision: 5, scale: 3 }),
+  verificationMethod: text("verification_method").default("selfie+phone"),
   approvedAt: timestamp("approved_at"),
   rejectedReason: text("rejected_reason"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Device bans table
+export const deviceBans = pgTable("device_bans", {
+  id: serial("id").primaryKey(),
+  deviceId: text("device_id").notNull(),
+  reason: text("reason"),
+  bannedByUserId: integer("banned_by_user_id"),
+  ipAddress: text("ip_address"),
+  bannedAt: timestamp("banned_at").defaultNow(),
 });
 
 // Match table
@@ -124,56 +140,54 @@ export const socials = pgTable("socials", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Define insert schemas
+// ── Insert schemas ────────────────────────────────────────────────────────────
+
 export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, createdAt: true, updatedAt: true,
 });
 
 export const insertVerificationSchema = createInsertSchema(verifications).omit({
-  id: true,
-  createdAt: true,
+  id: true, createdAt: true,
+});
+
+export const insertDeviceBanSchema = createInsertSchema(deviceBans).omit({
+  id: true, bannedAt: true,
 });
 
 export const insertMatchSchema = createInsertSchema(matches).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, createdAt: true, updatedAt: true,
 });
 
 export const insertMessageSchema = createInsertSchema(messages).omit({
-  id: true,
-  timestamp: true,
+  id: true, timestamp: true,
 });
 
 export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
-  id: true,
-  createdAt: true,
+  id: true, createdAt: true,
 });
 
 export const insertTransactionSchema = createInsertSchema(transactions).omit({
-  id: true,
-  createdAt: true,
+  id: true, createdAt: true,
 });
 
 export const insertSocialSchema = createInsertSchema(socials).omit({
-  id: true,
-  createdAt: true,
+  id: true, createdAt: true,
 });
 
 export const insertLivestreamSchema = createInsertSchema(livestreams).omit({
-  id: true,
-  startedAt: true,
-  endedAt: true,
+  id: true, startedAt: true, endedAt: true,
 });
 
-// Define types
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
 export type Verification = typeof verifications.$inferSelect;
 export type InsertVerification = z.infer<typeof insertVerificationSchema>;
+
+export type DeviceBan = typeof deviceBans.$inferSelect;
+export type InsertDeviceBan = z.infer<typeof insertDeviceBanSchema>;
 
 export type Match = typeof matches.$inferSelect;
 export type InsertMatch = z.infer<typeof insertMatchSchema>;
@@ -193,7 +207,8 @@ export type InsertSocial = z.infer<typeof insertSocialSchema>;
 export type Livestream = typeof livestreams.$inferSelect;
 export type InsertLivestream = z.infer<typeof insertLivestreamSchema>;
 
-// Auth related schemas — email-first, no username required
+// ── Auth schemas ──────────────────────────────────────────────────────────────
+
 export const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
@@ -234,7 +249,8 @@ export type PhoneLoginForm = z.infer<typeof phoneLoginSchema>;
 export type RegisterForm = z.infer<typeof registerSchema>;
 export type PhoneRegisterForm = z.infer<typeof phoneRegisterSchema>;
 
-// Profile schema
+// ── Profile schema ────────────────────────────────────────────────────────────
+
 export const profileSchema = z.object({
   firstName: z.string().min(2, "First name is required"),
   lastName: z.string().min(2, "Last name is required"),

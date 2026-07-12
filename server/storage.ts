@@ -1,6 +1,7 @@
 import { 
   User, InsertUser, 
   Verification, InsertVerification,
+  DeviceBan,
   Match, InsertMatch,
   Message, InsertMessage,
   Subscription, InsertSubscription,
@@ -91,6 +92,16 @@ export interface IStorage {
   getLivestream(id: number): Promise<Livestream | undefined>;
   endLivestream(id: number): Promise<void>;
   updateLivestreamStats(id: number, updates: Partial<Pick<Livestream, 'viewerCount' | 'likeCount' | 'totalGifts' | 'guestIds'>>): Promise<Livestream>;
+
+  // Device ban methods
+  isDeviceBanned(deviceId: string): Promise<boolean>;
+  createDeviceBan(deviceId: string, reason: string, bannedByUserId?: number, ipAddress?: string): Promise<DeviceBan>;
+  listDeviceBans(): Promise<DeviceBan[]>;
+  removeDeviceBan(id: number): Promise<void>;
+
+  // Admin verification review
+  listVerificationsForReview(): Promise<any[]>;
+  getAllVerifications(): Promise<any[]>;
 }
 
 // In-memory storage for testing and fallback
@@ -446,6 +457,51 @@ export class MemStorage implements IStorage {
     const updated = { ...ls, ...updates };
     this.livestreams.set(id, updated);
     return updated;
+  }
+
+  // Device ban methods (in-memory)
+  private deviceBans: Map<number, DeviceBan> = new Map();
+  private currentDeviceBanId = 1;
+
+  async isDeviceBanned(deviceId: string): Promise<boolean> {
+    return Array.from(this.deviceBans.values()).some(b => b.deviceId === deviceId);
+  }
+
+  async createDeviceBan(deviceId: string, reason: string, bannedByUserId?: number, ipAddress?: string): Promise<DeviceBan> {
+    const ban: DeviceBan = {
+      id: this.currentDeviceBanId++,
+      deviceId,
+      reason: reason || null,
+      bannedByUserId: bannedByUserId ?? null,
+      ipAddress: ipAddress ?? null,
+      bannedAt: new Date(),
+    };
+    this.deviceBans.set(ban.id, ban);
+    return ban;
+  }
+
+  async listDeviceBans(): Promise<DeviceBan[]> {
+    return Array.from(this.deviceBans.values()).sort((a, b) => b.id - a.id);
+  }
+
+  async removeDeviceBan(id: number): Promise<void> {
+    this.deviceBans.delete(id);
+  }
+
+  async listVerificationsForReview(): Promise<any[]> {
+    const vList = Array.from(this.verifications.values()).filter(v => v.status === 'pending_review' || v.status === 'pending');
+    return vList.map(v => ({
+      ...v,
+      user: this.users.get(v.userId),
+    }));
+  }
+
+  async getAllVerifications(): Promise<any[]> {
+    const vList = Array.from(this.verifications.values());
+    return vList.map(v => ({
+      ...v,
+      user: this.users.get(v.userId),
+    }));
   }
 }
 
@@ -860,6 +916,61 @@ export class DrizzleStorage implements IStorage {
       db.update(schema.livestreams).set(updates).where(eq(schema.livestreams.id, id)).returning()
     );
     return results[0];
+  }
+
+  // ── Device ban methods (Drizzle) ────────────────────────────────────────────
+  async isDeviceBanned(deviceId: string): Promise<boolean> {
+    if (!db) return false;
+    const r = await withRetry(() => db.select().from(schema.deviceBans).where(eq(schema.deviceBans.deviceId, deviceId)).limit(1));
+    return r.length > 0;
+  }
+
+  async createDeviceBan(deviceId: string, reason: string, bannedByUserId?: number, ipAddress?: string): Promise<DeviceBan> {
+    if (!db) throw new Error("Database not available");
+    const results = await withRetry(() => db.insert(schema.deviceBans).values({
+      deviceId,
+      reason: reason || null,
+      bannedByUserId: bannedByUserId ?? null,
+      ipAddress: ipAddress ?? null,
+      bannedAt: new Date(),
+    }).returning());
+    return results[0];
+  }
+
+  async listDeviceBans(): Promise<DeviceBan[]> {
+    if (!db) return [];
+    return await withRetry(() => db.select().from(schema.deviceBans).orderBy(desc(schema.deviceBans.bannedAt)));
+  }
+
+  async removeDeviceBan(id: number): Promise<void> {
+    if (!db) throw new Error("Database not available");
+    await withRetry(() => db.delete(schema.deviceBans).where(eq(schema.deviceBans.id, id)));
+  }
+
+  async listVerificationsForReview(): Promise<any[]> {
+    if (!db) return [];
+    const rows = await withRetry(() =>
+      db.select().from(schema.verifications)
+        .where(or(eq(schema.verifications.status, 'pending_review'), eq(schema.verifications.status, 'pending')))
+        .orderBy(desc(schema.verifications.createdAt))
+    );
+    const enriched = await Promise.all(rows.map(async (v: any) => {
+      const user = await this.getUser(v.userId);
+      return { ...v, user };
+    }));
+    return enriched;
+  }
+
+  async getAllVerifications(): Promise<any[]> {
+    if (!db) return [];
+    const rows = await withRetry(() =>
+      db.select().from(schema.verifications).orderBy(desc(schema.verifications.createdAt))
+    );
+    const enriched = await Promise.all(rows.map(async (v: any) => {
+      const user = await this.getUser(v.userId);
+      return { ...v, user };
+    }));
+    return enriched;
   }
 }
 
