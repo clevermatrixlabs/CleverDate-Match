@@ -10,10 +10,14 @@ interface AuthContextType {
   isLoading: boolean;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   loginWithPhone: (phone: string, password: string) => Promise<void>;
-  registerWithEmail: (email: string, password: string, country: string) => Promise<void>;
+  loginWithGoogle: (accessToken: string) => Promise<void>;
+  registerWithEmail: (email: string, password: string, country: string) => Promise<User & { emailCodeSent?: boolean }>;
   registerWithPhone: (phone: string, password: string, country: string) => Promise<void>;
   sendOtp: (phone: string) => Promise<{ otp?: string }>;
   verifyOtp: (phone: string, otp: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
+  completeAuth: (user: User) => void;
   logout: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
 }
@@ -37,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  const handleAuthSuccess = (data: User) => {
+  const completeAuth = (data: User) => {
     queryClient.setQueryData(['/api/auth/me'], data);
     if (!data.gender) {
       navigate('/create-profile');
@@ -48,33 +52,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // apiRequest already throws on error and returns parsed JSON — no .ok or .json() needed
   const loginEmailMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
       return apiRequest('POST', '/auth/login', { email, password }) as Promise<User>;
     },
-    onSuccess: handleAuthSuccess,
+    onSuccess: completeAuth,
   });
 
   const loginPhoneMutation = useMutation({
     mutationFn: async ({ phone, password }: { phone: string; password: string }) => {
       return apiRequest('POST', '/auth/login-phone', { phone, password }) as Promise<User>;
     },
-    onSuccess: handleAuthSuccess,
+    onSuccess: completeAuth,
   });
 
+  const loginGoogleMutation = useMutation({
+    mutationFn: async (accessToken: string) => {
+      return apiRequest('POST', '/auth/google', { accessToken }) as Promise<User>;
+    },
+    onSuccess: completeAuth,
+  });
+
+  // Register does NOT auto-navigate — caller decides (may need email verification first)
   const registerEmailMutation = useMutation({
     mutationFn: async ({ email, password, country }: { email: string; password: string; country: string }) => {
-      return apiRequest('POST', '/auth/register', { email, password, confirmPassword: password, country }) as Promise<User>;
+      return apiRequest('POST', '/auth/register', { email, password, confirmPassword: password, country }) as Promise<User & { emailCodeSent?: boolean }>;
     },
-    onSuccess: handleAuthSuccess,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['/api/auth/me'], data);
+    },
   });
 
   const registerPhoneMutation = useMutation({
     mutationFn: async ({ phone, password, country }: { phone: string; password: string; country: string }) => {
       return apiRequest('POST', '/auth/register-phone', { phone, password, confirmPassword: password, country }) as Promise<User>;
     },
-    onSuccess: handleAuthSuccess,
+    onSuccess: completeAuth,
   });
 
   const sendOtpMutation = useMutation({
@@ -87,7 +100,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mutationFn: async ({ phone, otp }: { phone: string; otp: string }) => {
       return apiRequest('POST', '/auth/verify-otp', { phone, otp }) as Promise<User>;
     },
-    onSuccess: handleAuthSuccess,
+    onSuccess: completeAuth,
+  });
+
+  const forgotPasswordMutation = useMutation({
+    mutationFn: async (email: string) => {
+      return apiRequest('POST', '/auth/forgot-password', { email });
+    },
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ email, code, newPassword }: { email: string; code: string; newPassword: string }) => {
+      return apiRequest('POST', '/auth/reset-password', { email, code, newPassword });
+    },
   });
 
   const logoutMutation = useMutation({
@@ -121,8 +146,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginWithPhone: async (phone, password) => {
           await loginPhoneMutation.mutateAsync({ phone, password });
         },
+        loginWithGoogle: async (accessToken) => {
+          await loginGoogleMutation.mutateAsync(accessToken);
+        },
         registerWithEmail: async (email, password, country) => {
-          await registerEmailMutation.mutateAsync({ email, password, country });
+          return registerEmailMutation.mutateAsync({ email, password, country });
         },
         registerWithPhone: async (phone, password, country) => {
           await registerPhoneMutation.mutateAsync({ phone, password, country });
@@ -133,6 +161,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         verifyOtp: async (phone, otp) => {
           await verifyOtpMutation.mutateAsync({ phone, otp });
         },
+        forgotPassword: async (email) => {
+          await forgotPasswordMutation.mutateAsync(email);
+        },
+        resetPassword: async (email, code, newPassword) => {
+          await resetPasswordMutation.mutateAsync({ email, code, newPassword });
+        },
+        completeAuth,
         logout: async () => {
           await logoutMutation.mutateAsync();
         },

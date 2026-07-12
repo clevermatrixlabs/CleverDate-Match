@@ -109,6 +109,10 @@ declare module "express-session" {
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit numeric
 
+// In-memory password reset tokens: key = 6-digit code, value = { email, expiresAt }
+const passwordResetTokens = new Map<string, { email: string; expiresAt: number }>();
+const PWD_RESET_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Parse JSON and URL-encoded bodies
   app.use(json());
@@ -343,11 +347,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[trial] User #${newUser.id} granted 14-day free trial (user ${totalUsers} of 100)`);
       }
 
+      // Auto-send email verification code
+      if (newUser.email && isEmailConfigured()) {
+        try {
+          const emailCode = generateCode();
+          req.session.emailCode = emailCode;
+          req.session.emailCodeExpiresAt = Date.now() + CODE_TTL_MS;
+          // We need the session saved before sending
+          await new Promise<void>((resolve) => req.session.save(() => resolve()));
+          await sendVerificationCode(newUser.email, emailCode, newUser.firstName);
+        } catch (emailErr) {
+          console.warn("[register] Could not send email verification code:", (emailErr as any)?.message);
+        }
+      }
+
       req.logIn(newUser, (err) => {
         if (err) {
           return res.status(500).json({ message: "Login after registration failed" });
         }
-        return res.status(201).json(safeUser(newUser));
+        return res.status(201).json({ ...safeUser(newUser), emailCodeSent: !!newUser.email });
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -503,6 +521,144 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ message: "Something went wrong" });
+    }
+  });
+
+  // Google Sign-In
+  app.post("/api/auth/google", authRateLimit, csrfGuard, async (req, res) => {
+    try {
+      const { credential, accessToken } = req.body;
+      let payload: any;
+      if (accessToken) {
+        const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!userRes.ok) return res.status(401).json({ message: "Invalid Google access token" });
+        payload = await userRes.json();
+        if (payload.error) return res.status(401).json({ message: "Google token verification failed" });
+      } else if (credential) {
+        const tokenRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
+        if (!tokenRes.ok) return res.status(401).json({ message: "Invalid Google credential" });
+        payload = await tokenRes.json() as any;
+        if (payload.error) return res.status(401).json({ message: "Google token verification failed" });
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        if (clientId && payload.aud !== clientId) {
+          return res.status(401).json({ message: "Google token audience mismatch" });
+        }
+      } else {
+        return res.status(400).json({ message: "Google credential or access token is required" });
+      }
+
+      const email = (payload.email || "").toLowerCase();
+      if (!email) return res.status(400).json({ message: "Could not retrieve email from Google" });
+
+      // Find or create user
+      let user: any = await storage.getUserByEmail(email);
+      if (user) {
+        if (user.isBanned) return res.status(403).json({ message: "This account has been banned. Contact support." });
+        if (user.isSuspended) return res.status(403).json({ message: "This account is suspended. Contact support." });
+      } else {
+        // New Google user — create account
+        const nameParts = (payload.name || email.split("@")[0]).split(" ");
+        const firstName = nameParts[0] || "";
+        const lastName = nameParts.slice(1).join(" ") || "";
+        const baseUsername = email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "").toLowerCase() || "user";
+        let username = baseUsername;
+        let counter = 1;
+        while (await storage.getUserByUsername(username)) {
+          username = `${baseUsername}${counter++}`;
+        }
+        user = await storage.createUser({
+          username,
+          email,
+          password: await hashPassword(crypto.randomBytes(32).toString("hex")),
+          firstName,
+          lastName,
+          isEmailVerified: true,
+          isVerified: false,
+          isPhoneVerified: false,
+          walletBalance: "0",
+        });
+        // Trial grant for first 100 users
+        const totalUsers = await storage.countUsers();
+        if (totalUsers <= 100) {
+          const trialEnd = new Date();
+          trialEnd.setDate(trialEnd.getDate() + 14);
+          const trialUpdates: any = { subscriptionTier: "basic", subscriptionExpiry: trialEnd.toISOString(), trialActivated: true, trialExpiresAt: trialEnd.toISOString() };
+          await storage.updateUser(user.id, trialUpdates);
+          Object.assign(user, trialUpdates);
+        }
+      }
+
+      req.logIn(user, (err) => {
+        if (err) return res.status(500).json({ message: "Login failed" });
+        return res.json(safeUser(user));
+      });
+    } catch (error: any) {
+      console.error("Google auth error:", error);
+      res.status(500).json({ message: "Google sign-in failed. Please try again." });
+    }
+  });
+
+  // Forgot password — send reset code to email
+  app.post("/api/auth/forgot-password", authRateLimit, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ message: "Email is required" });
+
+      const user = await storage.getUserByEmail(email.toLowerCase());
+      // Always return success to avoid email enumeration
+      if (!user || !user.email) {
+        return res.json({ success: true, message: "If that email exists, a reset code has been sent." });
+      }
+
+      // Invalidate any existing codes for this email
+      for (const [code, data] of passwordResetTokens.entries()) {
+        if (data.email === email.toLowerCase()) passwordResetTokens.delete(code);
+      }
+
+      const code = generateCode();
+      passwordResetTokens.set(code, { email: email.toLowerCase(), expiresAt: Date.now() + PWD_RESET_TTL_MS });
+
+      // Send via email
+      try {
+        await sendVerificationCode(user.email, code, user.firstName);
+      } catch {
+        console.log(`[pwd-reset] Code (email failed): ${code}`);
+      }
+
+      res.json({ success: true, message: "If that email exists, a reset code has been sent." });
+    } catch (error: any) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({ message: "Could not process request." });
+    }
+  });
+
+  // Reset password — verify code + set new password
+  app.post("/api/auth/reset-password", authRateLimit, async (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      if (!email || !code || !newPassword) return res.status(400).json({ message: "Email, code, and new password are required" });
+      if (newPassword.length < 8) return res.status(400).json({ message: "Password must be at least 8 characters" });
+
+      const tokenData = passwordResetTokens.get(String(code));
+      if (!tokenData) return res.status(400).json({ message: "Invalid or expired reset code" });
+      if (tokenData.email !== email.toLowerCase()) return res.status(400).json({ message: "Invalid reset code" });
+      if (Date.now() > tokenData.expiresAt) {
+        passwordResetTokens.delete(code);
+        return res.status(400).json({ message: "Reset code expired. Please request a new one." });
+      }
+
+      const user = await storage.getUserByEmail(email.toLowerCase());
+      if (!user) return res.status(404).json({ message: "Account not found" });
+
+      await storage.updateUser(user.id, { password: await hashPassword(newPassword) });
+      passwordResetTokens.delete(code);
+
+      res.json({ success: true, message: "Password updated successfully. You can now sign in." });
+    } catch (error: any) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ message: "Could not reset password." });
     }
   });
 

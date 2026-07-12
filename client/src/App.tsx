@@ -21,10 +21,9 @@ const LiveWatchPage = lazy(() => import("@/pages/LiveWatchPage"));
 import { AuthProvider } from "@/context/AuthContext";
 import { MatchProvider } from "@/context/MatchContext";
 import { AppLoading } from "@/components/AppLoading";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 
-const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
-  || (window.navigator as any).standalone 
-  || document.referrer.includes('android-app://');
+const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || "";
 
 function Router() {
   return (
@@ -57,13 +56,11 @@ function Router() {
 
 import { WebSocketProvider } from "@/context/WebSocketContext";
 
-function App() {
+function AppInner() {
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js').catch(error => {
-          console.log('Service worker registration failed:', error);
-        });
+        navigator.serviceWorker.register('/service-worker.js').catch(() => {});
       });
     }
   }, []);
@@ -86,4 +83,13 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  if (GOOGLE_CLIENT_ID) {
+    return (
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <AppInner />
+      </GoogleOAuthProvider>
+    );
+  }
+  return <AppInner />;
+}
