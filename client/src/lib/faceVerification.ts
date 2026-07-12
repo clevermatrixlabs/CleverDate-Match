@@ -24,9 +24,10 @@ export function loadFaceModels(onProgress?: (label: string) => void): Promise<vo
   return loadPromise;
 }
 
-// Detector options
-const liveDetectorOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.35 });
-const photoDetectorPrimary = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+// Detector options — slightly more lenient thresholds to improve detection rate
+const liveDetectorOpts    = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.25 });
+const liveDetectorFallback = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.25 });
+const photoDetectorPrimary  = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
 const photoDetectorFallback = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.25 });
 
 // ── Head-turn yaw ──────────────────────────────────────────────────────────────
@@ -46,15 +47,71 @@ function noseYawAngle(landmarks: faceapi.FaceLandmarks68): number {
 function mouthAspectRatio(landmarks: faceapi.FaceLandmarks68): number {
   const mouth = landmarks.getMouth(); // 20 points: outer 0-11, inner 12-19
   if (mouth.length < 20) return 0;
-  // Horizontal: left corner (0) → right corner (6)
   const leftCorner  = mouth[0];
   const rightCorner = mouth[6];
   const horizontal = Math.hypot(rightCorner.x - leftCorner.x, rightCorner.y - leftCorner.y);
-  // Vertical: inner top (13, 14) vs inner bottom (17, 18)
   const topY    = (mouth[13].y + mouth[14].y) / 2;
   const bottomY = (mouth[17].y + mouth[18].y) / 2;
   const vertical = Math.abs(bottomY - topY);
   return horizontal > 0 ? vertical / horizontal : 0;
+}
+
+// ── Wait until the video element has real pixel data ──────────────────────────
+function waitForVideoReady(videoEl: HTMLVideoElement, timeoutMs = 12_000): Promise<void> {
+  // Already ready
+  if (videoEl.readyState >= 2 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => {
+      cleanup();
+      reject(new Error(
+        'Camera took too long to start. Check your camera permissions and try again.'
+      ));
+    }, timeoutMs);
+
+    let resolved = false;
+    function check() {
+      if (resolved) return;
+      if (videoEl.readyState >= 2 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+        resolved = true;
+        cleanup();
+        resolve();
+      }
+    }
+
+    function cleanup() {
+      clearTimeout(deadline);
+      clearInterval(poll);
+      videoEl.removeEventListener('loadeddata',     check);
+      videoEl.removeEventListener('loadedmetadata', check);
+      videoEl.removeEventListener('playing',        check);
+      videoEl.removeEventListener('canplay',        check);
+    }
+
+    const poll = setInterval(check, 80);
+    videoEl.addEventListener('loadedmetadata', check);
+    videoEl.addEventListener('loadeddata',     check);
+    videoEl.addEventListener('canplay',        check);
+    videoEl.addEventListener('playing',        check);
+    check(); // immediate check in case already ready
+  });
+}
+
+// ── Capture a single frame from video into a fresh canvas ────────────────────
+// Passing a canvas to face-api.js is far more reliable than passing the
+// live video element, because the canvas has committed pixel data.
+function captureVideoFrame(videoEl: HTMLVideoElement): HTMLCanvasElement | null {
+  const w = videoEl.videoWidth;
+  const h = videoEl.videoHeight;
+  if (!w || !h) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width  = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(videoEl, 0, 0, w, h);
+  return canvas;
 }
 
 // ── LivenessProgress ──────────────────────────────────────────────────────────
@@ -72,25 +129,46 @@ export interface LivenessResult {
 }
 
 // Thresholds
-const MAR_SMILE   = 0.28;  // mouth aspect ratio for an open smile
-const YAW_TURN    = 0.15;  // 15% nose offset from centre counts as a turn
-const TIMEOUT_MS  = 90_000;
+const MAR_SMILE  = 0.22;   // Lowered slightly — some people have thin smiles
+const YAW_TURN   = 0.12;   // Lowered slightly — a small turn counts
+const TIMEOUT_MS = 90_000;
+const STABLE_FRAMES_REQUIRED = 5; // Reduced from 8 — faster confirmation
 
 /**
- * New liveness check — three steps:
- *  1. Face detected and stable (hold for ~1.5 s)
- *  2. Smile! (open mouth / show teeth)
+ * Liveness check — three steps:
+ *  1. Face detected and stable (hold for ~0.5 s)
+ *  2. Smile! (show teeth / open mouth)
  *  3. Turn head slightly in any direction
+ *
+ * Key fix: each detection cycle captures the video frame into a canvas
+ * first, then runs detection against the canvas, not the live video element.
+ * This eliminates timing race conditions and cross-browser readiness issues.
  */
 export async function runLivenessCheck(
   videoEl: HTMLVideoElement,
   onProgress: (p: LivenessProgress) => void,
   signal?: AbortSignal,
 ): Promise<LivenessResult> {
+
+  // ── Step 0: Wait for the video element to have real frame data ──────────
+  onProgress({
+    faceDetected: false, smiled: false, turned: false,
+    message: 'Starting camera…', percent: 0,
+  });
+
+  try {
+    await waitForVideoReady(videoEl);
+  } catch (err: any) {
+    throw new Error(err?.message ?? 'Camera not ready. Please try again.');
+  }
+
+  if (signal?.aborted) throw new Error('Liveness check cancelled');
+
   let smiled  = false;
   let turned  = false;
   let faceStableFrames = 0;
-  const STABLE_FRAMES_REQUIRED = 8; // ~0.5 s at 60 ms/frame
+  let consecutiveNullFrames = 0;
+  let useFallbackDetector = false;
 
   let bestSnapshot: { descriptor: Float32Array; canvas: HTMLCanvasElement; score: number } | null = null;
   const start = Date.now();
@@ -98,21 +176,60 @@ export async function runLivenessCheck(
   while (true) {
     if (signal?.aborted) throw new Error('Liveness check cancelled');
     if (Date.now() - start > TIMEOUT_MS) {
-      throw new Error('Verification timed out. Move to a brighter area, keep your face centred, and try again.');
+      throw new Error(
+        'Verification timed out. Move to a brighter area, keep your face centred, and try again.'
+      );
     }
 
-    const det = await faceapi
-      .detectSingleFace(videoEl, liveDetectorOpts)
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    if (!det) {
-      faceStableFrames = 0;
-      onProgress({ faceDetected: false, smiled, turned, message: 'Centre your face in the circle — good lighting helps', percent: 0 });
-      await sleep(80);
+    // Capture frame into canvas — this is the critical fix
+    const frame = captureVideoFrame(videoEl);
+    if (!frame) {
+      // Video dimensions are 0 — element not ready yet, keep waiting
+      onProgress({ faceDetected: false, smiled, turned, message: 'Warming up camera…', percent: 0 });
+      await sleep(120);
       continue;
     }
 
+    // Run detection against the canvas frame, not the live element
+    let det: faceapi.WithFaceDescriptor<faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }, faceapi.FaceLandmarks68>> | undefined;
+    try {
+      if (useFallbackDetector) {
+        det = await faceapi
+          .detectSingleFace(frame, liveDetectorFallback)
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+      } else {
+        det = await faceapi
+          .detectSingleFace(frame, liveDetectorOpts)
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+      }
+    } catch (detErr) {
+      console.warn('[face] Detection error (will retry):', detErr);
+      await sleep(150);
+      continue;
+    }
+
+    if (!det) {
+      faceStableFrames = 0;
+      consecutiveNullFrames++;
+
+      // After 30 failed frames (~3 s), switch to the heavier SSD detector
+      if (consecutiveNullFrames === 30 && !useFallbackDetector) {
+        useFallbackDetector = true;
+        console.log('[face] Switching to SSD fallback detector');
+      }
+
+      onProgress({
+        faceDetected: false, smiled, turned,
+        message: 'Centre your face in the circle — good lighting helps',
+        percent: 0,
+      });
+      await sleep(100);
+      continue;
+    }
+
+    consecutiveNullFrames = 0;
     faceStableFrames++;
 
     const mar = mouthAspectRatio(det.landmarks);
@@ -121,14 +238,9 @@ export async function runLivenessCheck(
     if (mar > MAR_SMILE) smiled = true;
     if (Math.abs(yaw) > YAW_TURN) turned = true;
 
-    // Track best snapshot
+    // Track best snapshot (highest detection confidence)
     if (!bestSnapshot || det.detection.score > bestSnapshot.score) {
-      const canvas = document.createElement('canvas');
-      canvas.width  = videoEl.videoWidth  || 640;
-      canvas.height = videoEl.videoHeight || 480;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-      bestSnapshot = { descriptor: det.descriptor, canvas, score: det.detection.score };
+      bestSnapshot = { descriptor: det.descriptor, canvas: frame, score: det.detection.score };
     }
 
     // Progress calculation
@@ -137,16 +249,15 @@ export async function runLivenessCheck(
     const turnProgress   = turned ? 35 : 0;
     const percent = Math.min(99, Math.round(stableProgress + smileProgress + turnProgress));
 
-    // Step message
     let message: string;
     if (faceStableFrames < STABLE_FRAMES_REQUIRED) {
-      message = 'Hold still — positioning your face...';
+      message = 'Hold still — positioning your face…';
     } else if (!smiled) {
       message = '😄 Give us a big smile!';
     } else if (!turned) {
       message = '↔ Turn your head slightly left or right';
     } else {
-      message = 'Almost done...';
+      message = 'Almost done…';
     }
 
     onProgress({ faceDetected: true, smiled, turned, message, percent });
