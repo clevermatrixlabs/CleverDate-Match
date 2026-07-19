@@ -1,0 +1,49 @@
+# Sign-Up Flow Fix — Combined Prompt
+
+Copy everything below into ONE message to Replit Agent.
+
+---
+
+I need two changes made to the sign-up flow. Please do them in order and confirm each works before moving to the next.
+
+## 1. Switch face verification to DeepFace
+
+Switch the selfie/face verification to use DeepFace instead of whatever is currently being used.
+
+- DeepFace is a free, open-source Python library — install it directly in the project (pip install deepface). It does NOT require any external account, API key, sign-up, or business verification of any kind, so please use it exactly this way rather than trying to connect to any third-party service.
+- Use the ArcFace backend/model within DeepFace for the face comparison, since it has strong accuracy (~99.4%) for verifying two faces are the same person.
+- Use it to compare the user's live selfie against their uploaded profile photos, to confirm the profile photos are genuinely them (catches catfishing).
+- Keep the verification flow clean and professional — no "blink twice" step, use a simple progress indicator with a head-turn or smile prompt instead.
+- Since this runs as code directly in the project rather than a paid external API, there is no monthly usage limit or cost to worry about — confirm this is working as expected.
+- Test it yourself end-to-end (simulate a selfie submission and compare it against a test profile photo) and confirm it actually works before telling me it's done. Show me the comparison result/confidence score it returns.
+
+## 2. Rebuild email and phone verification properly using Firebase
+
+Email and phone verification are currently broken — email sign-up doesn't complete properly, and phone verification shows "No account found with that phone number" and exposes the OTP code directly on screen in a "Dev mode" box, which is a security problem. Please rebuild both properly using **Firebase Authentication**:
+
+1. **Set up Firebase Authentication** in this project using the config below (this is my real Firebase project, already created):
+
+\`\`\`javascript
+import { initializeApp } from "firebase/app";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBoiQAjV0xcg5VHcZ0Ye1xHvrAl4ooMZis",
+  authDomain: "clever-date-match.firebaseapp.com",
+  projectId: "clever-date-match",
+  storageBucket: "clever-date-match.firebasestorage.app",
+  messagingSenderId: "949014130457",
+  appId: "1:949014130457:web:e3fa3160ecff0be1265f88"
+};
+
+const app = initializeApp(firebaseConfig);
+\`\`\`
+
+Store this config securely (e.g. as environment variables/secrets in Replit, not hardcoded in a public file) and use it to connect Firebase Authentication to this project.
+2. **Email verification**: use Firebase's built-in email verification (send a real confirmation link/code to the user's Gmail when they sign up). This is unlimited and free on Firebase's Spark plan.
+3. **Phone verification**: use Firebase Phone Authentication to send a real SMS OTP to the user's phone number and confirm it. This is free for the first 10,000 verifications per month. Make sure:
+   - The OTP is actually sent via real SMS — never displayed on screen in any "Dev mode" box, in the live app.
+   - The sign-up flow correctly creates a NEW account after verification succeeds — it should not be checking for an existing account (that was the bug causing "No account found with that phone number" during sign-up).
+4. The full sign-up flow should be: **Selfie (DeepFace, from step 1) → Email verification (Firebase) → Phone/OTP verification (Firebase) → Done/account created**.
+5. Also add "Forgot Password" recovery using Firebase Authentication's built-in password reset.
+
+Test this yourself — simulate a full new sign-up from start to finish (Selfie → Email → Phone/OTP → Done) — and confirm the account is actually created successfully at the end, before telling me it's done.
