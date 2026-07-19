@@ -35,7 +35,8 @@ export const users = pgTable("users", {
   suspendedReason: text("suspended_reason"),
   isBanned: boolean("is_banned").default(false),
   bannedReason: text("banned_reason"),
-  faceDescriptor: real("face_descriptor").array(),
+  faceDescriptor: real("face_descriptor").array(), // deprecated — kept for existing data
+  azureFaceId: text("azure_face_id"),              // Azure Face API faceId (expires 24h, stored for logging only)
   selfiePhoto: text("selfie_photo"),
   deviceId: text("device_id"),
   intention: text("intention", { enum: ["marriage", "long-term", "getting-to-know"] }),

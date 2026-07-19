@@ -678,109 +678,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(safeUser(user));
   });
 
-  // Verification route — selfie liveness + phone OTP, no government ID required
+  // Verification route — selfie liveness (Azure Face API) + phone OTP
+  // Face comparison powered by Azure Cognitive Services (Free tier F0: 30k txns/month).
   app.post("/api/verification", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       const {
-        selfieDescriptor,
-        verificationData,   // base64 selfie image (stored for admin review)
+        selfieBase64,   // JPEG data-URL captured from camera on the client
         deviceId,
         phoneVerified,
       } = req.body;
+
+      if (!selfieBase64 || typeof selfieBase64 !== "string") {
+        return res.status(400).json({ message: "Selfie image is required. Please complete the face scan." });
+      }
 
       // ── Device ban check ─────────────────────────────────────────────────────
       if (deviceId) {
         const banned = await storage.isDeviceBanned(deviceId);
         if (banned) {
           await storage.updateUser(user.id, { isBanned: true, bannedReason: "Device is banned" } as any);
-          return res.status(403).json({ message: "This device has been blocked. Contact support if you believe this is a mistake.", banned: true });
+          return res.status(403).json({
+            message: "This device has been blocked. Contact support if you believe this is a mistake.",
+            banned: true,
+          });
         }
-        // Store device ID on user record
         await storage.updateUser(user.id, { deviceId } as any);
       }
 
-      const isDescriptor = (d: any) =>
-        Array.isArray(d) && d.length === 128 && d.every((n) => typeof n === "number" && Number.isFinite(n));
+      // ── Save selfie for admin review ─────────────────────────────────────────
+      const selfieDataOnly = selfieBase64.includes(",") ? selfieBase64.split(",")[1] : selfieBase64;
+      await storage.updateUser(user.id, { selfiePhoto: selfieDataOnly } as any);
 
-      if (!isDescriptor(selfieDescriptor)) {
-        return res.status(400).json({ message: "Live face scan was not completed. Please retry the face scan." });
-      }
+      // ── Azure Face API — compare selfie vs profile photos ────────────────────
+      // Import here to avoid startup errors if AZURE env vars not yet set.
+      const { compareSelfieToPhotos, azureConfigured } = await import("./azureFace");
 
-      // ── Duplicate-account check ───────────────────────────────────────────────
-      const DUP_THRESHOLD = 0.42;
-      const allUsers = await storage.listUsers();
-      for (const other of allUsers) {
-        if (other.id === user.id) continue;
-        if (!other.isVerified) continue;
-        const otherDesc: any = (other as any).faceDescriptor;
-        if (!Array.isArray(otherDesc) || otherDesc.length !== 128) continue;
-        const dDup = Math.sqrt(
-          selfieDescriptor.reduce((s: number, v: number, i: number) => s + (v - Number(otherDesc[i])) ** 2, 0),
-        );
-        if (dDup < DUP_THRESHOLD) {
-          await storage.createVerification({
-            userId: user.id,
-            status: "rejected",
-            verificationData: verificationData || null,
-            rejectedReason: `Duplicate face detected — already verified as user #${other.id}`,
-          });
-          // Auto-ban device on duplicate attempt
-          if (deviceId) {
-            await storage.createDeviceBan(deviceId, `Duplicate account attempt (matched user #${other.id})`, undefined, req.ip);
-            await storage.updateUser(user.id, { isBanned: true, bannedReason: "Duplicate account" } as any);
-          }
-          return res.status(400).json({
-            message: "This face is already registered to another account. Each person may only have one account on Clever Date Match.",
-          });
-        }
-      }
+      // Collect profile photos stored for this user (as base64 data-URLs)
+      const freshUser = await storage.getUser(user.id) as any;
+      const profilePhotos: string[] = [
+        freshUser?.profilePicture,
+        freshUser?.additionalPicture1,
+        freshUser?.additionalPicture2,
+      ].filter(Boolean) as string[];
 
-      // ── Profile photo face comparison (if user already has photos) ───────────
-      // Selfie descriptors from profile photos may be sent client-side for comparison
-      const profilePhotoDescriptors: number[][] = req.body.profilePhotoDescriptors || [];
-      let bestMatchScore: number | null = null;
+      let faceMatchScore: string | null = null;
       let photoMismatch = false;
 
-      if (profilePhotoDescriptors.length > 0) {
-        const CLEAR_MISMATCH = 0.65;
-        const BORDERLINE     = 0.50;
+      if (!azureConfigured()) {
+        // Azure credentials not yet configured — log warning, auto-approve for now.
+        // Set AZURE_FACE_API_KEY and AZURE_FACE_API_ENDPOINT to enable face comparison.
+        console.warn(
+          "[verification] Azure Face API not configured. " +
+          "Set AZURE_FACE_API_KEY + AZURE_FACE_API_ENDPOINT to enable selfie-vs-photo comparison.",
+        );
+      } else {
+        const faceResult = await compareSelfieToPhotos(selfieBase64, profilePhotos);
+        console.log(`[verification] Azure result for user ${user.id}:`, faceResult);
 
-        let bestDistance = Infinity;
-        for (const pd of profilePhotoDescriptors) {
-          if (!isDescriptor(pd)) continue;
-          const d = Math.sqrt(selfieDescriptor.reduce((s: number, v: number, i: number) => s + (v - pd[i]) ** 2, 0));
-          if (d < bestDistance) bestDistance = d;
-        }
-        bestMatchScore = bestDistance;
+        faceMatchScore = faceResult.confidence != null
+          ? String(faceResult.confidence.toFixed(3))
+          : null;
 
-        if (bestDistance > CLEAR_MISMATCH) {
-          // Clear mismatch — selfie doesn't match profile photos
+        if (faceResult.match === "rejected") {
+          // Clear mismatch — selfie does not match profile photos
           if (deviceId) {
-            await storage.createDeviceBan(deviceId, `Profile photo face mismatch (distance=${bestDistance.toFixed(3)})`, undefined, req.ip);
+            await storage.createDeviceBan(
+              deviceId,
+              `Profile photo face mismatch (confidence=${faceResult.confidence?.toFixed(3)})`,
+              undefined,
+              req.ip,
+            );
           }
           await storage.createVerification({
             userId: user.id,
             status: "rejected",
-            verificationData: verificationData || null,
-            faceMatchScore: String(bestDistance.toFixed(3)),
-            rejectedReason: `Selfie does not match profile photos (distance=${bestDistance.toFixed(3)})`,
+            verificationData: selfieDataOnly,
+            faceMatchScore,
+            rejectedReason: `Selfie does not match profile photos (Azure confidence=${faceResult.confidence?.toFixed(3)})`,
           });
-          await storage.updateUser(user.id, { isSuspended: true, suspendedReason: "Verification failed: selfie doesn't match profile photos" } as any);
+          await storage.updateUser(user.id, {
+            isSuspended: true,
+            suspendedReason: "Verification failed: selfie doesn't match profile photos",
+          } as any);
           return res.status(400).json({
-            message: "Your selfie doesn't match your profile photos. Please use photos that show your real face.",
+            message: "Your selfie doesn't match your profile photos. Please use photos that genuinely show your face.",
           });
         }
 
-        if (bestDistance > BORDERLINE) {
-          // Borderline — flag for manual review
+        if (faceResult.match === "borderline" || faceResult.match === "no_face") {
+          // Low confidence or couldn't detect a face in the selfie — flag for manual review
           photoMismatch = true;
         }
-      }
-
-      // ── Save selfie photo to user record for admin review ────────────────────
-      if (verificationData) {
-        await storage.updateUser(user.id, { selfiePhoto: verificationData } as any);
+        // "confirmed" and "unconfigured" fall through to approval below
       }
 
       // ── Mark verified (or pending review for borderline cases) ───────────────
@@ -788,31 +778,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createVerification({
           userId: user.id,
           status: "pending_review",
-          verificationData: verificationData || null,
-          faceMatchScore: bestMatchScore !== null ? String(bestMatchScore.toFixed(3)) : null,
+          verificationData: selfieDataOnly,
+          faceMatchScore,
         });
-        await storage.updateUser(user.id, { isSuspended: true, suspendedReason: "Pending identity review" } as any);
-        return res.json({ success: true, status: "pending_review", message: "Your verification is under review. You'll be notified once approved." });
+        await storage.updateUser(user.id, {
+          isSuspended: true,
+          suspendedReason: "Pending identity review",
+        } as any);
+        return res.json({
+          success: true,
+          status: "pending_review",
+          message: "Your verification is under review. You'll be notified once approved.",
+        });
       }
 
       await storage.createVerification({
         userId: user.id,
         status: "approved",
-        verificationData: verificationData || null,
-        faceMatchScore: bestMatchScore !== null ? String(bestMatchScore.toFixed(3)) : null,
+        verificationData: selfieDataOnly,
+        faceMatchScore,
         approvedAt: new Date(),
       });
 
       await storage.updateUser(user.id, {
         isVerified: true,
-        faceDescriptor: selfieDescriptor,
         isPhoneVerified: !!phoneVerified,
       } as any);
 
-      return res.json({
-        success: true,
-        message: "Verification successful",
-      });
+      return res.json({ success: true, message: "Verification successful" });
+
     } catch (error: any) {
       console.error("Verification error:", error);
       res.status(500).json({ message: "Verification failed: " + (error?.message || "unknown error") });

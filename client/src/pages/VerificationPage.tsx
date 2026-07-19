@@ -8,48 +8,44 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { Shield, Camera, CheckCircle2, Phone, RefreshCw, SmilePlus } from 'lucide-react';
-import {
-  loadFaceModels,
-  runLivenessCheck,
-  type LivenessProgress,
-} from '@/lib/faceVerification';
+import { runLivenessCheck, type LivenessProgress } from '@/lib/faceVerification';
 import { getDeviceId } from '@/lib/deviceFingerprint';
 
-type Step = 'intro' | 'loading-models' | 'live-scan' | 'phone' | 'submitting' | 'done' | 'suspended' | 'banned';
+type Step = 'intro' | 'live-scan' | 'phone' | 'submitting' | 'done' | 'suspended' | 'banned';
 
 const STEPS = [
   { label: 'Selfie', icon: Camera },
-  { label: 'Phone', icon: Phone },
-  { label: 'Done', icon: CheckCircle2 },
+  { label: 'Phone',  icon: Phone },
+  { label: 'Done',   icon: CheckCircle2 },
 ];
 
 export default function VerificationPage() {
-  const [step, setStep]                 = useState<Step>('intro');
-  const [modelLoadMsg, setModelLoadMsg] = useState('Preparing camera...');
-  const [liveness, setLiveness]         = useState<LivenessProgress>({
-    faceDetected: false, smiled: false, turned: false, message: 'Starting...', percent: 0,
+  const [step, setStep]       = useState<Step>('intro');
+  const [liveness, setLiveness] = useState<LivenessProgress>({
+    step: 'centering', message: 'Starting…', percent: 0,
   });
-  const [selfieResult, setSelfieResult] = useState<{ descriptor: number[]; snapshotDataUrl: string } | null>(null);
-  const [phone, setPhone]               = useState('');
-  const [otp, setOtp]                   = useState('');
-  const [otpSent, setOtpSent]           = useState(false);
-  const [devOtp, setDevOtp]             = useState('');
-  const [otpLoading, setOtpLoading]     = useState(false);
-  const [otpVerified, setOtpVerified]   = useState(false);
+  const [selfieResult, setSelfieResult] = useState<{ snapshotDataUrl: string } | null>(null);
+  const [phone, setPhone]       = useState('');
+  const [otp, setOtp]           = useState('');
+  const [otpSent, setOtpSent]   = useState(false);
+  const [devOtp, setDevOtp]     = useState('');
+  const [otpLoading, setOtpLoading]   = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
 
   const videoRef  = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const abortRef  = useRef<AbortController | null>(null);
 
-  const [, navigate]  = useLocation();
-  const { user }      = useAuth();
-  const { toast }     = useToast();
+  const [, navigate] = useLocation();
+  const { user }     = useAuth();
+  const { toast }    = useToast();
 
-  // Admin skip
+  // Admin users skip verification entirely
   useEffect(() => {
     if (user && (user as any).isAdmin) navigate('/app/');
   }, [user, navigate]);
 
+  // Cleanup camera on unmount
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
@@ -57,21 +53,14 @@ export default function VerificationPage() {
     };
   }, []);
 
-  // If user already has phone registered + verified, skip phone step
   const phoneAlreadyVerified = !!((user as any)?.isPhoneVerified) || !!((user as any)?.phone);
 
-  // ── Verification submit mutation ──────────────────────────────────────────
+  // ── Verification submit mutation ────────────────────────────────────────────
   const verifyMutation = useMutation({
     mutationFn: async (payload: any) => apiRequest('POST', '/verification', payload),
     onSuccess: async (data: any) => {
-      if (data?.status === 'pending_review') {
-        setStep('suspended');
-        return;
-      }
-      if (data?.banned) {
-        setStep('banned');
-        return;
-      }
+      if (data?.status === 'pending_review') { setStep('suspended'); return; }
+      if (data?.banned)                      { setStep('banned');    return; }
       toast({ title: 'Verified! 🎉', description: 'Welcome to Clever Date Match.' });
       streamRef.current?.getTracks().forEach((t) => t.stop());
       await queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
@@ -80,33 +69,18 @@ export default function VerificationPage() {
     },
     onError: (error: Error) => {
       const msg = error.message || '';
-      if (msg.includes('banned') || msg.includes('device')) {
-        setStep('banned');
-        return;
-      }
-      if (msg.includes('suspended') || msg.includes('review')) {
-        setStep('suspended');
-        return;
-      }
+      if (msg.includes('banned') || msg.includes('device')) { setStep('banned');    return; }
+      if (msg.includes('suspended') || msg.includes('review')) { setStep('suspended'); return; }
       toast({ variant: 'destructive', title: 'Verification failed', description: msg });
       setStep('intro');
       setSelfieResult(null);
     },
   });
 
-  // ── Start camera + liveness check ────────────────────────────────────────
+  // ── Start camera + liveness ─────────────────────────────────────────────────
   const startSelfie = async () => {
-    setStep('loading-models');
-    setModelLoadMsg('Loading face AI (first time may take 30 s)...');
-    try {
-      await loadFaceModels((label) => setModelLoadMsg(label));
-    } catch {
-      toast({ variant: 'destructive', title: 'Could not load face AI', description: 'Check your internet connection and try again.' });
-      setStep('intro');
-      return;
-    }
+    setStep('live-scan');
 
-    setModelLoadMsg('Starting camera...');
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -119,12 +93,12 @@ export default function VerificationPage() {
       return;
     }
     streamRef.current = stream;
-    setStep('live-scan');
 
+    // Attach stream to video element after React renders it
     setTimeout(async () => {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        try { await videoRef.current.play(); } catch {}
+        try { await videoRef.current.play(); } catch { /* autoplay may fail silently */ }
       }
       abortRef.current = new AbortController();
       try {
@@ -136,9 +110,8 @@ export default function VerificationPage() {
         stream.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         setSelfieResult(result);
-        // Move to phone step (or skip if already verified)
         if (phoneAlreadyVerified) {
-          submitVerification(result.descriptor, result.snapshotDataUrl, true);
+          submitVerification(result.snapshotDataUrl, true);
         } else {
           setStep('phone');
         }
@@ -148,10 +121,10 @@ export default function VerificationPage() {
         toast({ variant: 'destructive', title: 'Selfie check failed', description: e?.message || 'Please try again.' });
         setStep('intro');
       }
-    }, 100);
+    }, 120);
   };
 
-  // ── Send OTP ──────────────────────────────────────────────────────────────
+  // ── OTP helpers ─────────────────────────────────────────────────────────────
   const sendOtp = async () => {
     if (!phone || phone.length < 8) {
       toast({ variant: 'destructive', title: 'Enter your phone number', description: 'Include country code e.g. +1234567890' });
@@ -165,12 +138,9 @@ export default function VerificationPage() {
       toast({ title: 'Code sent', description: `A 6-digit code was sent to ${phone}` });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Failed to send OTP', description: e.message });
-    } finally {
-      setOtpLoading(false);
-    }
+    } finally { setOtpLoading(false); }
   };
 
-  // ── Verify OTP ────────────────────────────────────────────────────────────
   const verifyOtp = async () => {
     if (!otp || otp.length !== 6) {
       toast({ variant: 'destructive', title: 'Enter the 6-digit code' });
@@ -181,31 +151,35 @@ export default function VerificationPage() {
       await apiRequest('POST', '/auth/verify-otp', { phone, otp });
       setOtpVerified(true);
       toast({ title: 'Phone verified ✓' });
-      if (selfieResult) {
-        submitVerification(selfieResult.descriptor, selfieResult.snapshotDataUrl, true);
-      }
+      if (selfieResult) submitVerification(selfieResult.snapshotDataUrl, true);
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Invalid code', description: e.message });
-    } finally {
-      setOtpLoading(false);
-    }
+    } finally { setOtpLoading(false); }
   };
 
-  // ── Final submit ──────────────────────────────────────────────────────────
-  const submitVerification = (descriptor: number[], selfieDataUrl: string, phoneVerified: boolean) => {
+  // ── Final submit ─────────────────────────────────────────────────────────────
+  const submitVerification = (selfieDataUrl: string, phoneVerifiedFlag: boolean) => {
     setStep('submitting');
     verifyMutation.mutate({
-      selfieDescriptor: descriptor,
-      verificationData: selfieDataUrl.split(',')[1],
+      selfieBase64: selfieDataUrl,
       deviceId: getDeviceId(),
-      phoneVerified,
+      phoneVerified: phoneVerifiedFlag,
     });
   };
 
-  // Current "progress step" for the stepper
-  const progressStep = step === 'intro' || step === 'loading-models' || step === 'live-scan' ? 0
+  // Progress step for stepper
+  const progressStep =
+    step === 'intro' || step === 'live-scan' ? 0
     : step === 'phone' ? 1
     : 2;
+
+  // Liveness step → visual cues
+  const liveBorderClass =
+    liveness.step === 'done' || liveness.step === 'capturing'
+      ? 'border-4 border-green-400 shadow-[0_0_20px_rgba(74,222,128,0.5)]'
+      : liveness.step === 'smile' || liveness.step === 'turn'
+        ? 'border-4 border-blue-400 animate-pulse'
+        : 'border-4 border-dashed border-gray-300';
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(160deg, #040810 0%, #0a0f2e 100%)' }}>
@@ -224,13 +198,12 @@ export default function VerificationPage() {
           {STEPS.map((s, i) => (
             <div key={i} className="flex flex-col items-center gap-1">
               <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${
-                i < progressStep ? 'bg-green-500 border-green-500' :
+                i < progressStep  ? 'bg-green-500 border-green-500' :
                 i === progressStep ? 'border-amber-400 bg-amber-400/20' : 'border-white/20 bg-white/5'
               }`}>
                 {i < progressStep
                   ? <CheckCircle2 className="w-5 h-5 text-white" />
-                  : <s.icon className={`w-4 h-4 ${i === progressStep ? 'text-amber-400' : 'text-white/30'}`} />
-                }
+                  : <s.icon className={`w-4 h-4 ${i === progressStep ? 'text-amber-400' : 'text-white/30'}`} />}
               </div>
               <span className={`text-xs font-medium ${i === progressStep ? 'text-amber-400' : 'text-white/30'}`}>{s.label}</span>
             </div>
@@ -254,7 +227,6 @@ export default function VerificationPage() {
                   Two quick steps — take a live selfie, then confirm your phone number. No ID documents needed. Takes under 2 minutes.
                 </p>
               </div>
-
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { emoji: '😄', label: 'Quick smile check' },
@@ -267,7 +239,6 @@ export default function VerificationPage() {
                   </div>
                 ))}
               </div>
-
               <Button
                 className="w-full h-14 text-base font-semibold rounded-2xl"
                 style={{ background: 'linear-gradient(135deg, #1565c0, #1a237e)' }}
@@ -276,21 +247,8 @@ export default function VerificationPage() {
                 Start Verification
               </Button>
               <p className="text-center text-xs text-gray-400">
-                Face scan runs entirely on your device. Nothing is shared.
+                Your selfie is sent securely to our servers for identity verification. Nothing is shared publicly.
               </p>
-            </div>
-          )}
-
-          {/* ── LOADING MODELS ── */}
-          {step === 'loading-models' && (
-            <div className="flex flex-col gap-6 items-center py-10">
-              <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center">
-                <RefreshCw className="text-blue-600 w-10 h-10 animate-spin" />
-              </div>
-              <div className="text-center">
-                <p className="text-gray-700 font-medium">{modelLoadMsg}</p>
-                <p className="text-xs text-gray-400 mt-2">First-time setup — takes 15–30 s, instant after</p>
-              </div>
             </div>
           )}
 
@@ -299,11 +257,7 @@ export default function VerificationPage() {
             <div className="flex flex-col gap-5 items-center">
               {/* Camera circle */}
               <div className="relative">
-                <div className={`absolute inset-0 rounded-full transition-all duration-300 ${
-                  liveness.percent === 100 ? 'border-4 border-green-400 shadow-[0_0_20px_rgba(74,222,128,0.5)]' :
-                  liveness.faceDetected ? 'border-4 border-blue-400 animate-pulse' :
-                  'border-4 border-dashed border-gray-300'
-                }`} />
+                <div className={`absolute inset-0 rounded-full transition-all duration-300 ${liveBorderClass}`} />
                 <video
                   autoPlay playsInline muted ref={videoRef}
                   className="w-64 h-64 rounded-full object-cover"
@@ -313,18 +267,24 @@ export default function VerificationPage() {
 
               {/* Instruction card */}
               <div className={`w-full rounded-2xl p-4 text-center transition-colors ${
-                !liveness.faceDetected ? 'bg-gray-50 border border-gray-200' :
-                !liveness.smiled ? 'bg-amber-50 border border-amber-200' :
-                !liveness.turned ? 'bg-blue-50 border border-blue-200' :
+                liveness.step === 'centering'  ? 'bg-gray-50 border border-gray-200' :
+                liveness.step === 'smile'      ? 'bg-amber-50 border border-amber-200' :
+                liveness.step === 'turn'       ? 'bg-blue-50 border border-blue-200' :
                 'bg-green-50 border border-green-200'
               }`}>
                 <p className="font-semibold text-gray-800 text-base">{liveness.message}</p>
                 <div className="flex justify-center gap-5 mt-3">
-                  <div className={`flex items-center gap-1.5 text-xs font-medium ${liveness.smiled ? 'text-green-600' : 'text-gray-400'}`}>
+                  <div className={`flex items-center gap-1.5 text-xs font-medium ${
+                    liveness.step === 'smile' || liveness.step === 'turn' || liveness.step === 'capturing' || liveness.step === 'done'
+                      ? 'text-green-600' : 'text-gray-400'
+                  }`}>
                     <SmilePlus className="w-4 h-4" />
                     Smile
                   </div>
-                  <div className={`flex items-center gap-1.5 text-xs font-medium ${liveness.turned ? 'text-green-600' : 'text-gray-400'}`}>
+                  <div className={`flex items-center gap-1.5 text-xs font-medium ${
+                    liveness.step === 'turn' || liveness.step === 'capturing' || liveness.step === 'done'
+                      ? 'text-green-600' : 'text-gray-400'
+                  }`}>
                     <span>↔</span> Head turn
                   </div>
                 </div>
@@ -341,7 +301,6 @@ export default function VerificationPage() {
           {/* ── PHONE STEP ── */}
           {step === 'phone' && (
             <div className="flex flex-col gap-5">
-              {/* Selfie preview */}
               {selfieResult && (
                 <div className="flex justify-center">
                   <div className="relative">
@@ -357,16 +316,15 @@ export default function VerificationPage() {
                   </div>
                 </div>
               )}
-
               <div className="text-center">
-                <h2 className="text-xl font-bold text-gray-800">Selfie done! ✓</h2>
-                <p className="text-gray-500 text-sm mt-1">Now enter your phone number so we can send a verification code.</p>
+                <h2 className="text-xl font-bold text-gray-800">Selfie captured! ✓</h2>
+                <p className="text-gray-500 text-sm mt-1">Now confirm your phone number.</p>
               </div>
 
               {devOtp && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
-                  <p className="text-xs text-amber-700 font-medium">Dev mode</p>
-                  <p className="text-sm text-amber-800 font-bold">OTP: {devOtp}</p>
+                  <p className="text-xs text-amber-700 font-medium">Dev mode OTP</p>
+                  <p className="text-sm text-amber-800 font-bold">{devOtp}</p>
                 </div>
               )}
 
@@ -427,7 +385,7 @@ export default function VerificationPage() {
               <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center">
                 <RefreshCw className="text-blue-600 w-10 h-10 animate-spin" />
               </div>
-              <p className="text-center text-gray-700 font-medium">Finalising your verification...</p>
+              <p className="text-center text-gray-700 font-medium">Verifying your identity…</p>
               <p className="text-center text-xs text-gray-400">Running security checks — just a moment</p>
             </div>
           )}
@@ -439,11 +397,11 @@ export default function VerificationPage() {
                 <CheckCircle2 className="text-green-500 w-14 h-14" />
               </div>
               <h2 className="text-2xl font-bold text-gray-800">You're verified!</h2>
-              <p className="text-gray-500 text-sm text-center">Taking you to the app...</p>
+              <p className="text-gray-500 text-sm text-center">Taking you to the app…</p>
             </div>
           )}
 
-          {/* ── PENDING REVIEW (suspended) ── */}
+          {/* ── PENDING REVIEW ── */}
           {step === 'suspended' && (
             <div className="flex flex-col gap-5 items-center py-8">
               <div className="w-20 h-20 rounded-full bg-amber-50 flex items-center justify-center">
@@ -451,10 +409,10 @@ export default function VerificationPage() {
               </div>
               <h2 className="text-xl font-bold text-gray-800 text-center">Under Review</h2>
               <p className="text-gray-500 text-sm text-center leading-relaxed max-w-xs">
-                Your account is currently under manual review by our team. You'll receive an email once it's approved (usually within 24 hours).
+                Your account is under manual review by our team. You'll receive an email once approved (usually within 24 hours).
               </p>
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 w-full text-sm text-amber-700 text-center">
-                If you believe this is a mistake, contact support at <strong>support@cleverdatematch.app</strong>
+                Questions? Email <strong>support@cleverdatematch.app</strong>
               </div>
             </div>
           )}
@@ -467,7 +425,7 @@ export default function VerificationPage() {
               </div>
               <h2 className="text-xl font-bold text-gray-800 text-center">Account Blocked</h2>
               <p className="text-gray-500 text-sm text-center leading-relaxed max-w-xs">
-                This account has been blocked due to a policy violation. If you believe this is an error, contact support.
+                This account has been blocked due to a policy violation. Contact support if you believe this is an error.
               </p>
             </div>
           )}

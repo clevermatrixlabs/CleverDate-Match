@@ -4,3 +4,4 @@
 - [Query setup quirk](query-setup.md) — no global defaultQueryFn; every useQuery must define its own queryFn explicitly
 - [Identity verification design](identity-verification.md) — Section 1 done: no gov ID, selfie uses smile+headturn (not blinks), device fingerprint banning, isBanned vs isSuspended, admin queue with approve/ban/device-ban.
 - [Google OAuth setup](google-oauth.md) — needs VITE_GOOGLE_CLIENT_ID (client) + GOOGLE_CLIENT_ID (server) secrets; uses useGoogleLogin hook (implicit flow, access_token) not GoogleLogin component; backend verifies via /v3/userinfo; email is the user's primary key.
+- [Azure Face API verification](azure-face-verification.md) — face-api.js removed; selfie capture is client-only (canvas capture, no ML); all face comparison runs server-side via server/azureFace.ts; needs AZURE_FACE_API_KEY + AZURE_FACE_API_ENDPOINT secrets; auto-approves with warning if unconfigured.
