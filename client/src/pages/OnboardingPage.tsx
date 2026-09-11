@@ -83,6 +83,7 @@ function GoogleSignInButton({ isLogin, onSuccess, onError }: {
 }) {
   const [loading, setLoading] = useState(false);
   const login = useGoogleLogin({
+    prompt: isLogin ? 'select_account' : undefined,
     onSuccess: (tokenResponse) => {
       setLoading(false);
       onSuccess(tokenResponse.access_token);
