@@ -32,9 +32,16 @@ declare global {
 }
 
 const PICKER_SCRIPT_URL = 'https://apis.google.com/js/api.js';
-const PICKER_API_KEY = (import.meta.env.VITE_GOOGLE_API_KEY || import.meta.env.VITE_FIREBASE_API_KEY) as string | undefined;
-const PICKER_APP_ID = (import.meta.env.VITE_GOOGLE_APP_ID || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID) as string | undefined;
+const PICKER_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY as string | undefined;
+const PICKER_APP_ID = import.meta.env.VITE_GOOGLE_APP_ID as string | undefined;
 const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+export const isGoogleDrivePhotoPickerConfigured = Boolean(
+  import.meta.env.VITE_GOOGLE_CLIENT_ID &&
+  PICKER_API_KEY &&
+  PICKER_APP_ID
+);
 
 let pickerLoadPromise: Promise<void> | null = null;
 
@@ -61,8 +68,10 @@ function loadPickerApi(): Promise<void> {
 
     if (existingScript) {
       if (window.gapi) loadPicker();
-      else existingScript.addEventListener('load', loadPicker, { once: true });
-      existingScript.addEventListener('error', () => reject(new Error('Photo selection is unavailable right now.')), { once: true });
+      else {
+        existingScript.addEventListener('load', loadPicker, { once: true });
+        existingScript.addEventListener('error', () => reject(new Error('Photo selection is unavailable right now.')), { once: true });
+      }
       return;
     }
 
@@ -75,11 +84,17 @@ function loadPickerApi(): Promise<void> {
     document.body.appendChild(script);
   });
 
+  pickerLoadPromise = pickerLoadPromise.catch((error) => {
+    pickerLoadPromise = null;
+    document.querySelector<HTMLScriptElement>(`script[src="${PICKER_SCRIPT_URL}"]`)?.remove();
+    throw error;
+  });
+
   return pickerLoadPromise;
 }
 
 function isSupportedImage(document: GooglePickerDocument): boolean {
-  return IMAGE_MIME_TYPES.includes(document.mimeType || '');
+  return IMAGE_MIME_TYPES.includes((document.mimeType || '').toLowerCase());
 }
 
 export default function GoogleDrivePhotoPicker({ onFile }: { onFile: PhotoSetter }) {
@@ -156,7 +171,7 @@ export default function GoogleDrivePhotoPicker({ onFile }: { onFile: PhotoSetter
         throw new Error('Please choose a JPG, PNG, WEBP, or GIF image.');
       }
 
-      if (document.sizeBytes && document.sizeBytes > 5 * 1024 * 1024) {
+      if (document.sizeBytes && document.sizeBytes > MAX_IMAGE_SIZE) {
         throw new Error('Please choose an image under 5 MB.');
       }
 
@@ -167,10 +182,10 @@ export default function GoogleDrivePhotoPicker({ onFile }: { onFile: PhotoSetter
       if (!response.ok) throw new Error('We could not download that photo. Please choose another one.');
 
       const blob = await response.blob();
-      if (!IMAGE_MIME_TYPES.includes(blob.type)) {
+      if (!IMAGE_MIME_TYPES.includes(blob.type.toLowerCase())) {
         throw new Error('Please choose a JPG, PNG, WEBP, or GIF image.');
       }
-      if (blob.size > 5 * 1024 * 1024) {
+      if (blob.size > MAX_IMAGE_SIZE) {
         throw new Error('Please choose an image under 5 MB.');
       }
 
@@ -194,6 +209,7 @@ export default function GoogleDrivePhotoPicker({ onFile }: { onFile: PhotoSetter
       variant="outline"
       size="sm"
       disabled={isOpening}
+      aria-label="Choose a profile photo from Google Drive"
       onClick={() => {
         setIsOpening(true);
         openPicker();

@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import GoogleDrivePhotoPicker from '@/components/GoogleDrivePhotoPicker';
+import GoogleDrivePhotoPicker, { isGoogleDrivePhotoPickerConfigured } from '@/components/GoogleDrivePhotoPicker';
 
 const profileSchema = z.object({
   firstName: z.string().min(2, 'First name is required'),
@@ -31,8 +31,6 @@ const profileSchema = z.object({
 type ProfileForm = z.infer<typeof profileSchema>;
 
 const DRAFT_KEY = 'profileDraft';
-const GOOGLE_DRIVE_CONFIGURED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
-
 function loadDraft(): Partial<ProfileForm> {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
@@ -393,7 +391,7 @@ export default function ProfileCreationPage() {
                       </>
                     )}
                     <input id="primary-photo" type="file" accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, setPrimaryPhoto)} />
-                    {GOOGLE_DRIVE_CONFIGURED && (
+                    {isGoogleDrivePhotoPickerConfigured && (
                       <div className="absolute inset-x-1 bottom-1" onClick={(event) => event.stopPropagation()}>
                         <GoogleDrivePhotoPicker onFile={setPrimaryPhoto} />
                       </div>
@@ -414,7 +412,7 @@ export default function ProfileCreationPage() {
                       </>
                     )}
                     <input id="additional-photo" type="file" accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, setAdditionalPhoto)} />
-                    {GOOGLE_DRIVE_CONFIGURED && (
+                    {isGoogleDrivePhotoPickerConfigured && (
                       <div className="absolute inset-x-1 bottom-1" onClick={(event) => event.stopPropagation()}>
                         <GoogleDrivePhotoPicker onFile={setAdditionalPhoto} />
                       </div>
@@ -435,7 +433,7 @@ export default function ProfileCreationPage() {
                       </>
                     )}
                     <input id="additional-photo-2" type="file" accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, setAdditionalPhoto2)} />
-                    {GOOGLE_DRIVE_CONFIGURED && (
+                    {isGoogleDrivePhotoPickerConfigured && (
                       <div className="absolute inset-x-1 bottom-1" onClick={(event) => event.stopPropagation()}>
                         <GoogleDrivePhotoPicker onFile={setAdditionalPhoto2} />
                       </div>
