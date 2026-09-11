@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,11 +13,20 @@ import { COUNTRIES, detectCountryFromIP } from '@/lib/countries';
 import { useGoogleLogin } from '@react-oauth/google';
 import { apiRequest } from '@/lib/queryClient';
 import { User } from '@/types';
+import {
+  createFirebasePhoneChallenge,
+  confirmFirebasePhoneCode,
+  isFirebaseConfigured,
+  reloadFirebaseUser,
+  normalizePhoneNumber,
+  toFriendlyAuthError,
+} from '@/lib/firebase';
+import type { ConfirmationResult } from 'firebase/auth';
 
 /* ── Feature flags ─────────────────────────────────────────────────────────── */
 const GOOGLE_CONFIGURED = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
 // Phone sign-up disabled at launch (SMS cost). Phone sign-in kept for existing users.
-const PHONE_SIGNUP_ENABLED = false;
+const PHONE_SIGNUP_ENABLED = true;
 
 type Screen =
   | 'welcome'
@@ -28,8 +37,7 @@ type Screen =
   | 'phone-signup'
   | 'otp'
   | 'verify-email'
-  | 'forgot-password'
-  | 'reset-password';
+  | 'forgot-password';
 
 /* ── Schemas ─────────────────────────────────────────────────────────────────── */
 const emailLoginSchema = z.object({
@@ -53,13 +61,7 @@ const phoneLoginSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 const otpSchema = z.object({ otp: z.string().length(6, 'Enter the 6-digit code') });
-const verifyEmailSchema = z.object({ code: z.string().length(6, 'Enter the 6-digit code') });
 const forgotPasswordSchema = z.object({ email: z.string().email('Please enter your email address') });
-const resetPasswordSchema = z.object({
-  code: z.string().length(6, 'Enter the 6-digit code from your email'),
-  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
-  confirmPassword: z.string(),
-}).refine(d => d.newPassword === d.confirmPassword, { message: "Passwords don't match", path: ['confirmPassword'] });
 
 /* ── Google multicolor G icon (official brand SVG) ───────────────────────── */
 function GoogleIcon({ size = 20 }: { size?: number }) {
@@ -130,12 +132,12 @@ export default function OnboardingPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingPhone, setPendingPhone] = useState('');
-  const [devOtp, setDevOtp] = useState('');
-  const [pendingUser, setPendingUser] = useState<(User & { emailCodeSent?: boolean }) | null>(null);
-  const [forgotEmail, setForgotEmail] = useState('');
+  const [pendingUser, setPendingUser] = useState<User | null>(null);
+  const [phoneConfirmation, setPhoneConfirmation] = useState<ConfirmationResult | null>(null);
+  const phoneRecaptchaCleanup = useRef<(() => void) | null>(null);
 
-  const { loginWithEmail, loginWithPhone, loginWithGoogle, registerWithEmail, registerWithPhone,
-    sendOtp, verifyOtp, forgotPassword, resetPassword, completeAuth } = useAuth();
+  const { loginWithEmail, loginWithPhone, loginWithGoogle, registerWithEmail,
+    forgotPassword, completeAuth } = useAuth();
   const { toast } = useToast();
 
   /* ── Forms ── */
@@ -147,9 +149,12 @@ export default function OnboardingPage() {
   const phoneForm = useForm({ resolver: zodResolver(phoneSchema), defaultValues: { phone: '', password: '', confirmPassword: '', country: '' } });
   const phoneLoginForm = useForm({ resolver: zodResolver(phoneLoginSchema), defaultValues: { phone: '', password: '' } });
   const otpForm = useForm({ resolver: zodResolver(otpSchema), defaultValues: { otp: '' } });
-  const verifyEmailForm = useForm({ resolver: zodResolver(verifyEmailSchema), defaultValues: { code: '' } });
   const forgotForm = useForm({ resolver: zodResolver(forgotPasswordSchema), defaultValues: { email: '' } });
-  const resetForm = useForm({ resolver: zodResolver(resetPasswordSchema), defaultValues: { code: '', newPassword: '', confirmPassword: '' } });
+
+  useEffect(() => () => {
+    phoneRecaptchaCleanup.current?.();
+    phoneRecaptchaCleanup.current = null;
+  }, []);
 
   /* Auto-detect country on mount */
   const [countryDetected, setCountryDetected] = useState(false);
@@ -165,103 +170,117 @@ export default function OnboardingPage() {
   /* ── Handlers ── */
   const handleEmailLogin = async (data: z.infer<typeof emailLoginSchema>) => {
     try { await loginWithEmail(data.email, data.password); }
-    catch (e: any) { toast({ variant: 'destructive', title: 'Login failed', description: e.message }); }
+    catch (e: any) { toast({ variant: 'destructive', title: 'Login failed', description: toFriendlyAuthError(e).message }); }
   };
 
   const handleEmailSignup = async (data: z.infer<typeof emailSignupSchema>) => {
     try {
       const user = await registerWithEmail(data.email, data.password, data.country);
       setPendingUser(user);
-      // If email is configured, we sent a verification code — show the verify screen
+      // Firebase sent a real verification link; wait for the user to confirm it.
       setScreen('verify-email');
-      toast({ title: 'Account created!', description: 'Check your inbox for a 6-digit verification code.' });
+      toast({ title: 'Account created!', description: 'Check your inbox for your Clever Date Match verification link.' });
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Registration failed', description: e.message });
+      toast({ variant: 'destructive', title: 'Registration failed', description: toFriendlyAuthError(e).message });
     }
   };
 
-  const handleVerifyEmail = async (data: z.infer<typeof verifyEmailSchema>) => {
+  const handleVerifyEmail = async () => {
     try {
-      await apiRequest('POST', '/verify/email', { code: data.code });
-      const updated = pendingUser ? { ...pendingUser, isEmailVerified: true } : null;
-      if (updated) completeAuth(updated as User);
+      if (!isFirebaseConfigured()) throw new Error('Verification is not available right now. Please try again later.');
+      const firebaseUser = await reloadFirebaseUser();
+      if (!firebaseUser.emailVerified) throw new Error('The email link has not been confirmed yet. Open it, then try again.');
+      const updated = await apiRequest('POST', '/auth/firebase/sync', {
+        idToken: await firebaseUser.getIdToken(true),
+      }) as User;
+      completeAuth(updated);
       toast({ title: 'Email verified!', description: 'Welcome to Clever Date Match.' });
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Verification failed', description: e.message });
+      toast({ variant: 'destructive', title: 'Verification failed', description: toFriendlyAuthError(e, 'We could not confirm your email yet. Please open the link in your inbox and try again.').message });
     }
-  };
-
-  const handleSkipEmailVerify = () => {
-    if (pendingUser) completeAuth(pendingUser as User);
   };
 
   const handleResendEmailCode = async () => {
     try {
-      await apiRequest('POST', '/verify/email/resend', {});
-      toast({ title: 'Code resent', description: 'A new code has been sent to your inbox.' });
+      const { resendFirebaseEmailVerification } = await import('@/lib/firebase');
+      await resendFirebaseEmailVerification();
+      toast({ title: 'Verification link sent', description: 'Check your inbox for a new Clever Date Match email.' });
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Could not resend', description: e.message });
+      toast({ variant: 'destructive', title: 'Could not resend', description: toFriendlyAuthError(e, 'We could not resend the link just now. Please try again.').message });
     }
   };
 
   const handlePhoneSignup = async (data: z.infer<typeof phoneSchema>) => {
-    try {
-      await registerWithPhone(data.phone, data.password, data.country);
-      toast({ title: 'Account created!', description: 'Welcome to Clever Date Match.' });
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Registration failed', description: e.message }); }
+    await handleSendOtp(data.phone, data.country);
   };
 
   const handlePhoneLogin = async (data: z.infer<typeof phoneLoginSchema>) => {
     try { await loginWithPhone(data.phone, data.password); }
-    catch (e: any) { toast({ variant: 'destructive', title: 'Login failed', description: e.message }); }
+    catch (e: any) { toast({ variant: 'destructive', title: 'Login failed', description: toFriendlyAuthError(e).message }); }
   };
 
-  const handleSendOtp = async (phone: string) => {
+  const handleSendOtp = async (phone: string, country?: string) => {
     try {
-      const res = await sendOtp(phone);
-      setPendingPhone(phone); setScreen('otp');
-      if (res?.otp) setDevOtp(res.otp);
-      toast({ title: 'OTP Sent', description: `A 6-digit code was sent to ${phone}` });
-    } catch (e: any) { toast({ variant: 'destructive', title: 'Failed to send OTP', description: e.message }); }
+      if (!isFirebaseConfigured()) throw new Error('Phone verification is not available right now. Please try again later.');
+      const normalizedPhone = normalizePhoneNumber(phone, country);
+      if (!/^\+[1-9]\d{6,14}$/.test(normalizedPhone)) {
+        throw new Error("That phone number doesn't look right — please check the number and try again.");
+      }
+      const challenge = createFirebasePhoneChallenge(normalizedPhone, 'firebase-recaptcha');
+      phoneRecaptchaCleanup.current = challenge.cleanup;
+      const confirmation = await challenge.confirmation;
+      setPhoneConfirmation(confirmation);
+      setPendingPhone(normalizedPhone); setScreen('otp');
+      if (country) phoneForm.setValue('country', country);
+      phoneForm.setValue('phone', normalizedPhone);
+      toast({ title: 'SMS sent', description: `A verification code was sent to ${normalizedPhone}` });
+    } catch (e: any) {
+      phoneRecaptchaCleanup.current?.();
+      phoneRecaptchaCleanup.current = null;
+      toast({ variant: 'destructive', title: 'Could not send your code', description: toFriendlyAuthError(e, 'Something went wrong sending your code — please try again.').message });
+    }
   };
 
   const handleVerifyOtp = async (data: z.infer<typeof otpSchema>) => {
-    try { await verifyOtp(pendingPhone, data.otp); }
-    catch (e: any) { toast({ variant: 'destructive', title: 'Invalid OTP', description: e.message }); }
+    try {
+      if (!phoneConfirmation) throw new Error('Your SMS session expired. Please request a new code.');
+      const firebaseUser = await confirmFirebasePhoneCode(phoneConfirmation, data.otp);
+      const localUser = await apiRequest('POST', '/auth/firebase/sync', {
+        idToken: await firebaseUser.getIdToken(),
+        country: phoneForm.getValues('country'),
+        intent: 'signup',
+      }) as User;
+      phoneRecaptchaCleanup.current?.();
+      setPhoneConfirmation(null);
+      completeAuth(localUser);
+    }
+    catch (e: any) { toast({ variant: 'destructive', title: 'That code did not work', description: toFriendlyAuthError(e, 'That code is not correct. Please check it and try again.').message }); }
   };
 
   const handleGoogleSuccess = async (accessToken: string) => {
     try { await loginWithGoogle(accessToken); }
-    catch (e: any) { toast({ variant: 'destructive', title: 'Google sign-in failed', description: e.message }); }
+    catch (e: any) { toast({ variant: 'destructive', title: 'Google sign-in failed', description: toFriendlyAuthError(e, 'Could not connect to Google. Try email instead.').message }); }
   };
 
   const handleForgotPassword = async (data: z.infer<typeof forgotPasswordSchema>) => {
     try {
       await forgotPassword(data.email);
-      setForgotEmail(data.email);
-      setScreen('reset-password');
-      toast({ title: 'Code sent', description: 'If that email exists, a 6-digit reset code was sent.' });
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Error', description: e.message });
-    }
-  };
-
-  const handleResetPassword = async (data: z.infer<typeof resetPasswordSchema>) => {
-    try {
-      await resetPassword(forgotEmail, data.code, data.newPassword);
-      toast({ title: 'Password updated!', description: 'You can now sign in with your new password.' });
+      toast({ title: 'Reset link sent', description: 'Check your inbox for your Clever Date Match password reset link.' });
       setScreen('email-login');
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Reset failed', description: e.message });
+      toast({ variant: 'destructive', title: 'Could not send reset link', description: toFriendlyAuthError(e, 'We could not send the reset link just now. Please try again.').message });
     }
   };
 
   const back = () => {
-    if (screen === 'otp') return setScreen('phone-login');
+    if (screen === 'otp') {
+      phoneRecaptchaCleanup.current?.();
+      phoneRecaptchaCleanup.current = null;
+      setPhoneConfirmation(null);
+      return setScreen('phone-login');
+    }
     if (screen === 'verify-email') return setScreen('choose-method');
     if (screen === 'forgot-password') return setScreen('email-login');
-    if (screen === 'reset-password') return setScreen('forgot-password');
     setScreen('choose-method');
   };
 
@@ -537,32 +556,15 @@ export default function OnboardingPage() {
                 <ShieldCheck className="w-8 h-8 text-blue-600" />
               </div>
               <h2 className="text-2xl font-bold text-gray-800 mb-2">Check your inbox</h2>
-              <p className="text-gray-500 text-sm max-w-xs">
-                We sent a 6-digit verification code to <strong>{pendingUser?.email || 'your email'}</strong>. Enter it below to confirm your account.
+                 <p className="text-gray-500 text-sm max-w-xs">
+                 We sent a verification link to <strong>{pendingUser?.email || 'your email'}</strong>. Open it, then return here and press the button below.
               </p>
             </div>
-            <Form {...verifyEmailForm}>
-              <form onSubmit={verifyEmailForm.handleSubmit(handleVerifyEmail)} className="space-y-4">
-                <FormField control={verifyEmailForm.control} name="code" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Verification Code</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <ShieldCheck className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                        <Input {...field} type="text" inputMode="numeric" maxLength={6} placeholder="Enter 6-digit code" className="pl-10 h-14 rounded-xl text-center text-lg tracking-[0.3em] font-semibold" autoComplete="one-time-code" />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <Button type="submit" className="w-full h-14 text-base font-semibold rounded-2xl" style={{ background:'linear-gradient(135deg,#1565c0,#1a237e)' }} disabled={verifyEmailForm.formState.isSubmitting}>
-                  {verifyEmailForm.formState.isSubmitting ? 'Verifying…' : 'Verify Email'}
-                </Button>
-              </form>
-            </Form>
+            <Button type="button" onClick={handleVerifyEmail} className="w-full h-14 text-base font-semibold rounded-2xl" style={{ background:'linear-gradient(135deg,#1565c0,#1a237e)' }}>
+              Check verification status
+            </Button>
             <div className="flex flex-col items-center gap-3 mt-2">
-              <button className="text-sm text-blue-600 font-medium" onClick={handleResendEmailCode}>Didn't receive it? Resend code</button>
-              <button className="text-sm text-gray-400" onClick={handleSkipEmailVerify}>Verify later</button>
+               <button className="text-sm text-blue-600 font-medium" onClick={handleResendEmailCode}>Didn't receive it? Resend link</button>
             </div>
           </div>
         )}
@@ -576,7 +578,7 @@ export default function OnboardingPage() {
                 <KeyRound className="w-8 h-8 text-orange-500" />
               </div>
               <h2 className="text-2xl font-bold text-gray-800 mb-2">Forgot Password?</h2>
-              <p className="text-gray-500 text-sm max-w-xs">Enter your email and we'll send you a 6-digit reset code.</p>
+              <p className="text-gray-500 text-sm max-w-xs">Enter your email and we'll send you a secure Clever Date Match reset link.</p>
             </div>
             <Form {...forgotForm}>
               <form onSubmit={forgotForm.handleSubmit(handleForgotPassword)} className="space-y-4">
@@ -593,7 +595,7 @@ export default function OnboardingPage() {
                   </FormItem>
                 )} />
                 <Button type="submit" className="w-full h-14 text-base font-semibold rounded-2xl" style={{ background:'linear-gradient(135deg,#1565c0,#1a237e)' }} disabled={forgotForm.formState.isSubmitting}>
-                  {forgotForm.formState.isSubmitting ? 'Sending…' : 'Send Reset Code'}
+                  {forgotForm.formState.isSubmitting ? 'Sending…' : 'Send Reset Link'}
                 </Button>
               </form>
             </Form>
@@ -601,63 +603,6 @@ export default function OnboardingPage() {
         )}
 
         {/* ── RESET PASSWORD ─────────────────────────────────────────── */}
-        {screen === 'reset-password' && (
-          <div className="flex flex-col gap-4">
-            <button onClick={back} className="flex items-center gap-1 text-blue-600 text-sm mb-2"><ArrowLeft className="w-4 h-4" /> Back</button>
-            <div className="flex flex-col items-center text-center mb-4 pt-2">
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ background:'linear-gradient(135deg,#e8f5e9,#c8e6c9)' }}>
-                <ShieldCheck className="w-8 h-8 text-green-600" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Reset Password</h2>
-              <p className="text-gray-500 text-sm max-w-xs">Enter the 6-digit code sent to <strong>{forgotEmail}</strong> and choose a new password.</p>
-            </div>
-            <Form {...resetForm}>
-              <form onSubmit={resetForm.handleSubmit(handleResetPassword)} className="space-y-4">
-                <FormField control={resetForm.control} name="code" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Reset Code</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="text" inputMode="numeric" maxLength={6} placeholder="6-digit code" className="h-12 rounded-xl text-center text-lg tracking-[0.3em] font-semibold" autoComplete="one-time-code" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={resetForm.control} name="newPassword" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>New Password</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input {...field} type={showPassword ? 'text' : 'password'} placeholder="Min. 8 characters" className="pr-10 h-12 rounded-xl" autoComplete="new-password" />
-                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400">
-                          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={resetForm.control} name="confirmPassword" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirm New Password</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input {...field} type={showConfirm ? 'text' : 'password'} placeholder="Repeat new password" className="pr-10 h-12 rounded-xl" autoComplete="new-password" />
-                        <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-3 text-gray-400">
-                          {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <Button type="submit" className="w-full h-14 text-base font-semibold rounded-2xl" style={{ background:'linear-gradient(135deg,#1565c0,#1a237e)' }} disabled={resetForm.formState.isSubmitting}>
-                  {resetForm.formState.isSubmitting ? 'Updating…' : 'Set New Password'}
-                </Button>
-              </form>
-            </Form>
-          </div>
-        )}
-
         {/* ── PHONE LOGIN ────────────────────────────────────────────── */}
         {screen === 'phone-login' && (
           <div className="flex flex-col gap-4">
@@ -784,9 +729,8 @@ export default function OnboardingPage() {
         {screen === 'otp' && (
           <div className="flex flex-col gap-4">
             <button onClick={back} className="flex items-center gap-1 text-blue-600 text-sm mb-2"><ArrowLeft className="w-4 h-4" /> Back</button>
-            <h2 className="text-2xl font-bold text-gray-800 mb-1">Enter OTP</h2>
+            <h2 className="text-2xl font-bold text-gray-800 mb-1">Enter your verification code</h2>
             <p className="text-gray-500 text-sm mb-4">A 6-digit code was sent to {pendingPhone}</p>
-            {devOtp && <p className="text-xs text-amber-600 bg-amber-50 rounded-lg p-2 text-center">Dev mode — code: {devOtp}</p>}
             <Form {...otpForm}>
               <form onSubmit={otpForm.handleSubmit(handleVerifyOtp)} className="space-y-4">
                 <FormField control={otpForm.control} name="otp" render={({ field }) => (
@@ -811,6 +755,7 @@ export default function OnboardingPage() {
         )}
 
       </div>
+      <div id="firebase-recaptcha" className="fixed -left-[9999px] top-0 h-px w-px overflow-hidden" aria-hidden="true" />
     </div>
   );
 }

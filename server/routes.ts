@@ -12,7 +12,6 @@ import { z } from "zod";
 import { 
   loginSchema, 
   registerSchema,
-  phoneRegisterSchema,
   profileSchema,
   insertMatchSchema, 
   insertMessageSchema,
@@ -23,7 +22,7 @@ import * as fs from "fs";
 import * as path from "path";
 import multer from "multer";
 import bcrypt from "bcryptjs";
-import { sendVerificationCode, isEmailConfigured, sendAdminNotification } from "./email";
+import { sendAdminNotification } from "./email";
 import { v2 as cloudinary } from "cloudinary";
 import { sendToUser } from "./engagement";
 
@@ -98,20 +97,9 @@ const upload = multer({
 declare module "express-session" {
   interface SessionData {
     userId: number;
-    emailCode: string;
-    emailCodeExpiresAt: number;
-    phoneCode: string;
-    phoneCodeExpiresAt: number;
     pendingUserId: number;
   }
 }
-
-const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit numeric
-
-// In-memory password reset tokens: key = 6-digit code, value = { email, expiresAt }
-const passwordResetTokens = new Map<string, { email: string; expiresAt: number }>();
-const PWD_RESET_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Parse JSON and URL-encoded bodies
@@ -298,8 +286,165 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/auth/login", authRateLimit, csrfGuard);
   app.use("/api/auth/register", authRateLimit, csrfGuard);
   app.use("/api/auth/login-phone", authRateLimit, csrfGuard);
-  app.use("/api/auth/register-phone", authRateLimit, csrfGuard);
-  app.use("/api/auth/send-otp", strictRateLimit, csrfGuard);
+  app.use("/api/auth/firebase/sync", authRateLimit, csrfGuard);
+  app.use("/api/auth/firebase/phone-verified", strictRateLimit, csrfGuard);
+
+  // Firebase Authentication is the source of truth for email/phone proof.
+  // The REST lookup validates the ID token without exposing a service account
+  // key in the web app or requiring Firebase Admin SDK credentials.
+  async function lookupFirebaseToken(idToken: string): Promise<{
+    localId: string;
+    email?: string;
+    emailVerified?: boolean;
+    phoneNumber?: string;
+    displayName?: string;
+  }> {
+    const apiKey = process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY;
+    if (!apiKey) throw new Error("Firebase server configuration is missing");
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.users?.[0]) {
+      throw new Error("Invalid or expired Firebase session");
+    }
+    const firebaseUser = body.users[0];
+    return {
+      localId: firebaseUser.localId,
+      email: firebaseUser.email?.toLowerCase(),
+      emailVerified: Boolean(firebaseUser.emailVerified),
+      phoneNumber: firebaseUser.phoneNumber,
+      displayName: firebaseUser.displayName,
+    };
+  }
+
+  function usernameBaseForFirebase(firebaseUser: Awaited<ReturnType<typeof lookupFirebaseToken>>) {
+    const source = firebaseUser.email?.split("@")[0] || firebaseUser.phoneNumber?.replace(/\D/g, "").slice(-8) || "user";
+    return source.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase().slice(0, 24) || "user";
+  }
+
+  async function createFirebaseLocalUser(
+    firebaseUser: Awaited<ReturnType<typeof lookupFirebaseToken>>,
+    country?: string,
+  ) {
+    const baseUsername = usernameBaseForFirebase(firebaseUser);
+    let username = baseUsername;
+    let counter = 1;
+    while (await storage.getUserByUsername(username)) username = `${baseUsername}${counter++}`;
+
+    const nameParts = (firebaseUser.displayName || "").trim().split(/\s+/).filter(Boolean);
+    return storage.createUser({
+      username,
+      email: firebaseUser.email,
+      phone: firebaseUser.phoneNumber,
+      password: await hashPassword(crypto.randomBytes(32).toString("hex")),
+      firstName: nameParts[0],
+      lastName: nameParts.slice(1).join(" ") || undefined,
+      country,
+      walletBalance: "0",
+      isEmailVerified: Boolean(firebaseUser.emailVerified),
+      isPhoneVerified: Boolean(firebaseUser.phoneNumber),
+      isVerified: false,
+    });
+  }
+
+  app.post("/api/auth/firebase/sync", async (req, res) => {
+    try {
+      const { idToken, country, allowUnverifiedEmail, intent } = req.body;
+      if (!idToken || typeof idToken !== "string") {
+        return res.status(400).json({ message: "We could not confirm your account. Please try again." });
+      }
+
+      const firebaseUser = await lookupFirebaseToken(idToken);
+      if (!firebaseUser.email && !firebaseUser.phoneNumber) {
+        return res.status(400).json({ message: "We could not find an email address or phone number for this account." });
+      }
+      if (firebaseUser.email && !firebaseUser.emailVerified && !allowUnverifiedEmail) {
+        return res.status(403).json({ message: "Please verify your email address before continuing." });
+      }
+
+      let user = firebaseUser.email
+        ? await storage.getUserByEmail(firebaseUser.email)
+        : undefined;
+      if (!user && firebaseUser.phoneNumber) {
+        user = await storage.getUserByPhone(firebaseUser.phoneNumber);
+      }
+
+      if (intent === "signup" && user) {
+        return res.status(409).json({ message: "An account with that phone number already exists. Try signing in instead." });
+      }
+
+      if (user) {
+        const updates: any = {};
+        if (firebaseUser.email && !user.email) updates.email = firebaseUser.email;
+        if (firebaseUser.phoneNumber && !user.phone) updates.phone = firebaseUser.phoneNumber;
+        if (firebaseUser.emailVerified && !user.isEmailVerified) updates.isEmailVerified = true;
+        if (firebaseUser.phoneNumber && !user.isPhoneVerified) updates.isPhoneVerified = true;
+        if (country && !user.country) updates.country = country;
+        if (Object.keys(updates).length) user = await storage.updateUser(user.id, updates) || user;
+      } else {
+        user = await createFirebaseLocalUser(firebaseUser, country);
+        const totalUsers = await storage.countUsers();
+        if (totalUsers <= 100) {
+          const trialEnd = new Date();
+          trialEnd.setDate(trialEnd.getDate() + 14);
+          const trialUpdates: any = {
+            subscriptionTier: "basic",
+            subscriptionExpiry: trialEnd.toISOString(),
+            trialActivated: true,
+            trialExpiresAt: trialEnd.toISOString(),
+          };
+          await storage.updateUser(user.id, trialUpdates);
+          Object.assign(user, trialUpdates);
+        }
+      }
+
+      if ((user as any).isBanned) {
+        return res.status(403).json({ message: "This account has been banned. Contact support." });
+      }
+      if ((user as any).isSuspended) {
+        return res.status(403).json({ message: "This account is suspended. Contact support." });
+      }
+
+      req.logIn(user, (err) => {
+        if (err) return res.status(500).json({ message: "We could not sign you in. Please try again." });
+        return res.json(safeUser(user));
+      });
+    } catch (error: any) {
+      console.error("Firebase sync error:", error?.message || error);
+      res.status(401).json({ message: "We could not confirm your account. Please try again." });
+    }
+  });
+
+  app.post("/api/auth/firebase/phone-verified", requireAuth, async (req, res) => {
+    try {
+      const { idToken, phone } = req.body;
+      if (!idToken || !phone) return res.status(400).json({ message: "A phone number and verification code are required." });
+      const firebaseUser = await lookupFirebaseToken(idToken);
+      if (!firebaseUser.phoneNumber || firebaseUser.phoneNumber !== phone) {
+        return res.status(400).json({ message: "The verified phone number does not match the submitted number." });
+      }
+      const user = req.user as any;
+      const existing = await storage.getUserByPhone(phone);
+      if (existing && existing.id !== user.id) {
+        return res.status(409).json({ message: "That phone number is already linked to another account." });
+      }
+      const updated = await storage.updateUser(user.id, {
+        phone,
+        isPhoneVerified: true,
+      } as any);
+      res.json({ success: true, user: safeUser(updated || user) });
+    } catch (error: any) {
+      console.error("Firebase phone verification error:", error?.message || error);
+      res.status(401).json({ message: "Could not verify this phone number. Please try again." });
+    }
+  });
 
   // Auth routes — email-based registration
   app.post("/api/auth/register", async (req, res) => {
@@ -347,81 +492,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[trial] User #${newUser.id} granted 14-day free trial (user ${totalUsers} of 100)`);
       }
 
-      // Auto-send email verification code
-      if (newUser.email && isEmailConfigured()) {
-        try {
-          const emailCode = generateCode();
-          req.session.emailCode = emailCode;
-          req.session.emailCodeExpiresAt = Date.now() + CODE_TTL_MS;
-          // We need the session saved before sending
-          await new Promise<void>((resolve) => req.session.save(() => resolve()));
-          await sendVerificationCode(newUser.email, emailCode, newUser.firstName);
-        } catch (emailErr) {
-          console.warn("[register] Could not send email verification code:", (emailErr as any)?.message);
-        }
-      }
-
-      req.logIn(newUser, (err) => {
-        if (err) {
-          return res.status(500).json({ message: "Login after registration failed" });
-        }
-        return res.status(201).json({ ...safeUser(newUser), emailCodeSent: !!newUser.email });
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: error.errors[0]?.message || "Validation error" });
-      }
-      console.error("Register error:", error);
-      res.status(500).json({ message: "Something went wrong. Please try again." });
-    }
-  });
-
-  // Phone-based registration
-  app.post("/api/auth/register-phone", async (req, res) => {
-    try {
-      const validatedData = phoneRegisterSchema.parse(req.body);
-
-      // Check if phone already registered
-      const existingUser = await storage.getUserByPhone(validatedData.phone);
-      if (existingUser) {
-        return res.status(409).json({ message: "An account with that phone number already exists. Please log in." });
-      }
-
-      // Derive a username from phone
-      const baseUsername = `user${validatedData.phone.replace(/\D/g, "").slice(-8)}`;
-      let username = baseUsername;
-      let counter = 1;
-      while (await storage.getUserByUsername(username)) {
-        username = `${baseUsername}${counter++}`;
-      }
-
-      const newUser = await storage.createUser({
-        username,
-        phone: validatedData.phone,
-        password: await hashPassword(validatedData.password),
-        country: validatedData.country,
-        walletBalance: "0",
-        isVerified: false,
-        isEmailVerified: false,
-        isPhoneVerified: false,
-      });
-
-      // First 100 users — auto-grant 14-day Basic trial
-      const totalUsersPhone = await storage.countUsers();
-      if (totalUsersPhone <= 100) {
-        const trialEnd = new Date();
-        trialEnd.setDate(trialEnd.getDate() + 14);
-        const trialUpdates: any = {
-          subscriptionTier: "basic",
-          subscriptionExpiry: trialEnd.toISOString(),
-          trialActivated: true,
-          trialExpiresAt: trialEnd.toISOString(),
-        };
-        await storage.updateUser(newUser.id, trialUpdates);
-        Object.assign(newUser, trialUpdates);
-        console.log(`[trial] Phone user #${newUser.id} granted 14-day free trial (user ${totalUsersPhone} of 100)`);
-      }
-
       req.logIn(newUser, (err) => {
         if (err) {
           return res.status(500).json({ message: "Login after registration failed" });
@@ -432,50 +502,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: error.errors[0]?.message || "Validation error" });
       }
-      console.error("Register-phone error:", error);
+      console.error("Register error:", error);
       res.status(500).json({ message: "Something went wrong. Please try again." });
     }
-  });
-
-  // Send OTP (simulated — in production use Twilio/AWS SNS)
-  app.post("/api/auth/send-otp", async (req, res) => {
-    const { phone } = req.body;
-    if (!phone) return res.status(400).json({ message: "Phone number required" });
-    
-    // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    req.session.phoneCode = otp;
-    req.session.pendingUserId = 0;
-    
-    // In production: send via Twilio. For now, return it in dev mode.
-    console.log(`[OTP for ${phone}]: ${otp}`);
-    res.json({ 
-      success: true, 
-      message: "OTP sent to your phone number",
-      // Only expose in development for testing:
-      ...(process.env.NODE_ENV !== "production" ? { otp } : {})
-    });
-  });
-
-  // Verify OTP for phone login
-  app.post("/api/auth/verify-otp", async (req, res) => {
-    const { phone, otp } = req.body;
-    if (!phone || !otp) return res.status(400).json({ message: "Phone and OTP required" });
-
-    if (req.session.phoneCode !== otp) {
-      return res.status(401).json({ message: "Invalid or expired OTP. Please try again." });
-    }
-
-    let user = await storage.getUserByPhone(phone);
-    if (!user) {
-      return res.status(404).json({ message: "No account found with that phone number", needsRegistration: true });
-    }
-
-    req.logIn(user, (err) => {
-      if (err) return res.status(500).json({ message: "Login failed" });
-      req.session.phoneCode = "";
-      return res.json(safeUser(user));
-    });
   });
 
   app.post("/api/auth/login", (req, res, next) => {
@@ -600,68 +629,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Forgot password — send reset code to email
-  app.post("/api/auth/forgot-password", authRateLimit, async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email) return res.status(400).json({ message: "Email is required" });
-
-      const user = await storage.getUserByEmail(email.toLowerCase());
-      // Always return success to avoid email enumeration
-      if (!user || !user.email) {
-        return res.json({ success: true, message: "If that email exists, a reset code has been sent." });
-      }
-
-      // Invalidate any existing codes for this email
-      for (const [code, data] of passwordResetTokens.entries()) {
-        if (data.email === email.toLowerCase()) passwordResetTokens.delete(code);
-      }
-
-      const code = generateCode();
-      passwordResetTokens.set(code, { email: email.toLowerCase(), expiresAt: Date.now() + PWD_RESET_TTL_MS });
-
-      // Send via email
-      try {
-        await sendVerificationCode(user.email, code, user.firstName);
-      } catch {
-        console.log(`[pwd-reset] Code (email failed): ${code}`);
-      }
-
-      res.json({ success: true, message: "If that email exists, a reset code has been sent." });
-    } catch (error: any) {
-      console.error("Forgot password error:", error);
-      res.status(500).json({ message: "Could not process request." });
-    }
-  });
-
-  // Reset password — verify code + set new password
-  app.post("/api/auth/reset-password", authRateLimit, async (req, res) => {
-    try {
-      const { email, code, newPassword } = req.body;
-      if (!email || !code || !newPassword) return res.status(400).json({ message: "Email, code, and new password are required" });
-      if (newPassword.length < 8) return res.status(400).json({ message: "Password must be at least 8 characters" });
-
-      const tokenData = passwordResetTokens.get(String(code));
-      if (!tokenData) return res.status(400).json({ message: "Invalid or expired reset code" });
-      if (tokenData.email !== email.toLowerCase()) return res.status(400).json({ message: "Invalid reset code" });
-      if (Date.now() > tokenData.expiresAt) {
-        passwordResetTokens.delete(code);
-        return res.status(400).json({ message: "Reset code expired. Please request a new one." });
-      }
-
-      const user = await storage.getUserByEmail(email.toLowerCase());
-      if (!user) return res.status(404).json({ message: "Account not found" });
-
-      await storage.updateUser(user.id, { password: await hashPassword(newPassword) });
-      passwordResetTokens.delete(code);
-
-      res.json({ success: true, message: "Password updated successfully. You can now sign in." });
-    } catch (error: any) {
-      console.error("Reset password error:", error);
-      res.status(500).json({ message: "Could not reset password." });
-    }
-  });
-
   app.post("/api/auth/logout", (req, res) => {
     req.logout(() => {
       res.json({ success: true });
@@ -678,8 +645,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(safeUser(user));
   });
 
-  // Verification route — selfie liveness (Azure Face API) + phone OTP
-  // Face comparison powered by Azure Cognitive Services (Free tier F0: 30k txns/month).
+  // Verification route — selfie liveness (DeepFace) + Firebase phone proof.
   app.post("/api/verification", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
@@ -710,9 +676,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const selfieDataOnly = selfieBase64.includes(",") ? selfieBase64.split(",")[1] : selfieBase64;
       await storage.updateUser(user.id, { selfiePhoto: selfieDataOnly } as any);
 
-      // ── Azure Face API — compare selfie vs profile photos ────────────────────
-      // Import here to avoid startup errors if AZURE env vars not yet set.
-      const { compareSelfieToPhotos, azureConfigured } = await import("./azureFace");
+      // ── DeepFace / ArcFace — compare selfie vs profile photos ────────────────
+      const { compareSelfieToPhotos } = await import("./deepface");
 
       // Collect profile photos stored for this user (as base64 data-URLs)
       const freshUser = await storage.getUser(user.id) as any;
@@ -725,52 +690,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let faceMatchScore: string | null = null;
       let photoMismatch = false;
 
-      if (!azureConfigured()) {
-        // Azure credentials not yet configured — log warning, auto-approve for now.
-        // Set AZURE_FACE_API_KEY and AZURE_FACE_API_ENDPOINT to enable face comparison.
-        console.warn(
-          "[verification] Azure Face API not configured. " +
-          "Set AZURE_FACE_API_KEY + AZURE_FACE_API_ENDPOINT to enable selfie-vs-photo comparison.",
-        );
-      } else {
-        const faceResult = await compareSelfieToPhotos(selfieBase64, profilePhotos);
-        console.log(`[verification] Azure result for user ${user.id}:`, faceResult);
+      const faceResult = await compareSelfieToPhotos(selfieBase64, profilePhotos);
+      console.log(`[verification] DeepFace result for user ${user.id}:`, faceResult);
 
-        faceMatchScore = faceResult.confidence != null
-          ? String(faceResult.confidence.toFixed(3))
-          : null;
+      faceMatchScore = faceResult.confidence != null
+        ? String(faceResult.confidence.toFixed(3))
+        : null;
 
-        if (faceResult.match === "rejected") {
-          // Clear mismatch — selfie does not match profile photos
-          if (deviceId) {
-            await storage.createDeviceBan(
-              deviceId,
-              `Profile photo face mismatch (confidence=${faceResult.confidence?.toFixed(3)})`,
-              undefined,
-              req.ip,
-            );
-          }
-          await storage.createVerification({
-            userId: user.id,
-            status: "rejected",
-            verificationData: selfieDataOnly,
-            faceMatchScore,
-            rejectedReason: `Selfie does not match profile photos (Azure confidence=${faceResult.confidence?.toFixed(3)})`,
-          });
-          await storage.updateUser(user.id, {
-            isSuspended: true,
-            suspendedReason: "Verification failed: selfie doesn't match profile photos",
-          } as any);
-          return res.status(400).json({
-            message: "Your selfie doesn't match your profile photos. Please use photos that genuinely show your face.",
-          });
+      if (faceResult.match === "rejected") {
+        if (deviceId) {
+          await storage.createDeviceBan(
+            deviceId,
+            `Profile photo face mismatch (confidence=${faceResult.confidence?.toFixed(3)})`,
+            undefined,
+            req.ip,
+          );
         }
+        await storage.createVerification({
+          userId: user.id,
+          status: "rejected",
+          verificationData: selfieDataOnly,
+          faceMatchScore,
+          rejectedReason: `Selfie does not match profile photos (DeepFace confidence=${faceResult.confidence?.toFixed(3)})`,
+        });
+        await storage.updateUser(user.id, {
+          isSuspended: true,
+          suspendedReason: "Verification failed: selfie doesn't match profile photos",
+        } as any);
+        return res.status(400).json({
+          message: "Your selfie doesn't match your profile photos. Please use photos that genuinely show your face.",
+        });
+      }
 
-        if (faceResult.match === "borderline" || faceResult.match === "no_face") {
-          // Low confidence or couldn't detect a face in the selfie — flag for manual review
-          photoMismatch = true;
-        }
-        // "confirmed" and "unconfigured" fall through to approval below
+      if (faceResult.match === "borderline" || faceResult.match === "no_face") {
+        photoMismatch = true;
       }
 
       // ── Mark verified (or pending review for borderline cases) ───────────────
@@ -809,88 +762,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error: any) {
       console.error("Verification error:", error);
-      res.status(500).json({ message: "Verification failed: " + (error?.message || "unknown error") });
-    }
-  });
-
-  // Email verification endpoint
-  app.post("/api/verify/email", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const { code } = req.body;
-      const { emailCode, emailCodeExpiresAt } = req.session;
-
-      if (!code) return res.status(400).json({ message: "Verification code is required" });
-      if (!emailCode) return res.status(400).json({ message: "No code on file. Please request a new code." });
-      if (emailCodeExpiresAt && Date.now() > emailCodeExpiresAt) {
-        return res.status(400).json({ message: "Code expired. Please request a new code." });
-      }
-      if (String(code).trim() !== emailCode) {
-        return res.status(400).json({ message: "Invalid verification code" });
-      }
-
-      await storage.updateUser(user.id, { isEmailVerified: true });
-
-      delete req.session.emailCode;
-      delete req.session.emailCodeExpiresAt;
-
-      res.json({ success: true, message: "Email verified successfully" });
-    } catch (error) {
-      console.error("Email verification error:", error);
-      res.status(500).json({ message: "Email verification failed" });
-    }
-  });
-
-  // Resend email verification code
-  app.post("/api/verify/email/resend", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      if (!user.email) return res.status(400).json({ message: "No email on file" });
-
-      const code = generateCode();
-      req.session.emailCode = code;
-      req.session.emailCodeExpiresAt = Date.now() + CODE_TTL_MS;
-
-      const result = await sendVerificationCode(user.email, code, user.firstName);
-      if (!result.sent) {
-        if (!isEmailConfigured()) {
-          console.log(`[verify] Email code (not sent — gmail not configured): ${code}`);
-          return res.json({ success: true, sent: false, message: "Email not configured. Code logged to server console." });
-        }
-        return res.status(502).json({ message: `Could not send email: ${result.reason}` });
-      }
-      res.json({ success: true, sent: true, message: "A new code has been emailed to you." });
-    } catch (error: any) {
-      console.error("Resend email code error:", error);
-      res.status(500).json({ message: "Could not resend code" });
-    }
-  });
-
-  // Phone verification endpoint
-  app.post("/api/verify/phone", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const { code } = req.body;
-      const { phoneCode, phoneCodeExpiresAt } = req.session;
-
-      if (!code) return res.status(400).json({ message: "Verification code is required" });
-      if (!phoneCode) return res.status(400).json({ message: "No code on file. Please request a new code." });
-      if (phoneCodeExpiresAt && Date.now() > phoneCodeExpiresAt) {
-        return res.status(400).json({ message: "Code expired. Please request a new code." });
-      }
-      if (String(code).trim() !== phoneCode) {
-        return res.status(400).json({ message: "Invalid verification code" });
-      }
-
-      await storage.updateUser(user.id, { isPhoneVerified: true });
-
-      delete req.session.phoneCode;
-      delete req.session.phoneCodeExpiresAt;
-
-      res.json({ success: true, message: "Phone verified successfully" });
-    } catch (error) {
-      console.error("Phone verification error:", error);
-      res.status(500).json({ message: "Phone verification failed" });
+      res.status(500).json({ message: "We could not complete your verification. Please try again." });
     }
   });
 

@@ -10,6 +10,14 @@ import { Progress } from '@/components/ui/progress';
 import { Shield, Camera, CheckCircle2, Phone, RefreshCw, SmilePlus } from 'lucide-react';
 import { runLivenessCheck, type LivenessProgress } from '@/lib/faceVerification';
 import { getDeviceId } from '@/lib/deviceFingerprint';
+import {
+  createFirebasePhoneChallenge,
+  confirmFirebasePhoneCode,
+  isFirebaseConfigured,
+  normalizePhoneNumber,
+  toFriendlyAuthError,
+} from '@/lib/firebase';
+import type { ConfirmationResult } from 'firebase/auth';
 
 type Step = 'intro' | 'live-scan' | 'phone' | 'submitting' | 'done' | 'suspended' | 'banned';
 
@@ -28,13 +36,14 @@ export default function VerificationPage() {
   const [phone, setPhone]       = useState('');
   const [otp, setOtp]           = useState('');
   const [otpSent, setOtpSent]   = useState(false);
-  const [devOtp, setDevOtp]     = useState('');
+  const [phoneConfirmation, setPhoneConfirmation] = useState<ConfirmationResult | null>(null);
   const [otpLoading, setOtpLoading]   = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
 
   const videoRef  = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const abortRef  = useRef<AbortController | null>(null);
+  const phoneRecaptchaCleanup = useRef<(() => void) | null>(null);
 
   const [, navigate] = useLocation();
   const { user }     = useAuth();
@@ -50,6 +59,8 @@ export default function VerificationPage() {
     return () => {
       abortRef.current?.abort();
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      phoneRecaptchaCleanup.current?.();
+      phoneRecaptchaCleanup.current = null;
     };
   }, []);
 
@@ -63,6 +74,7 @@ export default function VerificationPage() {
       if (data?.banned)                      { setStep('banned');    return; }
       toast({ title: 'Verified! 🎉', description: 'Welcome to Clever Date Match.' });
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      phoneRecaptchaCleanup.current?.();
       await queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
       setStep('done');
       setTimeout(() => navigate('/app/'), 1400);
@@ -71,7 +83,11 @@ export default function VerificationPage() {
       const msg = error.message || '';
       if (msg.includes('banned') || msg.includes('device')) { setStep('banned');    return; }
       if (msg.includes('suspended') || msg.includes('review')) { setStep('suspended'); return; }
-      toast({ variant: 'destructive', title: 'Verification failed', description: msg });
+      toast({
+        variant: 'destructive',
+        title: 'Verification failed',
+        description: toFriendlyAuthError(error, 'We could not complete your verification. Please try again.').message,
+      });
       setStep('intro');
       setSelfieResult(null);
     },
@@ -126,18 +142,25 @@ export default function VerificationPage() {
 
   // ── OTP helpers ─────────────────────────────────────────────────────────────
   const sendOtp = async () => {
-    if (!phone || phone.length < 8) {
-      toast({ variant: 'destructive', title: 'Enter your phone number', description: 'Include country code e.g. +1234567890' });
+    const normalizedPhone = normalizePhoneNumber(phone, (user as any)?.country);
+    if (!/^\+[1-9]\d{6,14}$/.test(normalizedPhone)) {
+      toast({ variant: 'destructive', title: 'Enter your phone number', description: "That phone number doesn't look right — please check the number and try again." });
       return;
     }
+    setPhone(normalizedPhone);
     setOtpLoading(true);
     try {
-      const res = await apiRequest('POST', '/auth/send-otp', { phone }) as any;
+      if (!isFirebaseConfigured()) throw new Error('Phone verification is not available right now. Please try again later.');
+      const challenge = createFirebasePhoneChallenge(normalizedPhone, 'firebase-recaptcha-verification');
+      phoneRecaptchaCleanup.current = challenge.cleanup;
+      const confirmation = await challenge.confirmation;
+      setPhoneConfirmation(confirmation);
       setOtpSent(true);
-      if (res?.otp) setDevOtp(res.otp);
-      toast({ title: 'Code sent', description: `A 6-digit code was sent to ${phone}` });
+      toast({ title: 'Code sent', description: `A 6-digit code was sent to ${normalizedPhone}` });
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Failed to send OTP', description: e.message });
+      phoneRecaptchaCleanup.current?.();
+      phoneRecaptchaCleanup.current = null;
+      toast({ variant: 'destructive', title: 'Could not send your code', description: toFriendlyAuthError(e, 'Something went wrong sending your code — please try again.').message });
     } finally { setOtpLoading(false); }
   };
 
@@ -148,12 +171,19 @@ export default function VerificationPage() {
     }
     setOtpLoading(true);
     try {
-      await apiRequest('POST', '/auth/verify-otp', { phone, otp });
+      if (!phoneConfirmation) throw new Error('Your SMS session expired. Please request a new code.');
+      const firebaseUser = await confirmFirebasePhoneCode(phoneConfirmation, otp);
+      await apiRequest('POST', '/auth/firebase/phone-verified', {
+        idToken: await firebaseUser.getIdToken(),
+        phone,
+      }) as any;
       setOtpVerified(true);
+      setPhoneConfirmation(null);
+      phoneRecaptchaCleanup.current?.();
       toast({ title: 'Phone verified ✓' });
       if (selfieResult) submitVerification(selfieResult.snapshotDataUrl, true);
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'Invalid code', description: e.message });
+      toast({ variant: 'destructive', title: 'That code did not work', description: toFriendlyAuthError(e, 'That code is not correct. Please check it and try again.').message });
     } finally { setOtpLoading(false); }
   };
 
@@ -321,13 +351,6 @@ export default function VerificationPage() {
                 <p className="text-gray-500 text-sm mt-1">Now confirm your phone number.</p>
               </div>
 
-              {devOtp && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
-                  <p className="text-xs text-amber-700 font-medium">Dev mode OTP</p>
-                  <p className="text-sm text-amber-800 font-bold">{devOtp}</p>
-                </div>
-              )}
-
               <div className="flex gap-2">
                 <Input
                   value={phone}
@@ -370,7 +393,7 @@ export default function VerificationPage() {
                   </Button>
                   <button
                     className="text-xs text-blue-600 text-center underline"
-                    onClick={() => { setOtpSent(false); setOtp(''); setDevOtp(''); }}
+                    onClick={() => { setOtpSent(false); setOtp(''); setPhoneConfirmation(null); phoneRecaptchaCleanup.current?.(); }}
                   >
                     Use a different number
                   </button>
@@ -432,6 +455,7 @@ export default function VerificationPage() {
 
         </div>
       </div>
+      <div id="firebase-recaptcha-verification" className="fixed -left-[9999px] top-0 h-px w-px overflow-hidden" aria-hidden="true" />
     </div>
   );
 }

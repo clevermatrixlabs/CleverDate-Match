@@ -38,3 +38,14 @@ waitForPort = 5000
 
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[userenv]
+
+[userenv.shared]
+FIREBASE_API_KEY = "AIzaSyBoiQAjV0xcg5VHcZ0Ye1xHvrAl4ooMZis"
+VITE_FIREBASE_API_KEY = "AIzaSyBoiQAjV0xcg5VHcZ0Ye1xHvrAl4ooMZis"
+VITE_FIREBASE_APP_ID = "1:949014130457:web:e3fa3160ecff0be1265f88"
+VITE_FIREBASE_AUTH_DOMAIN = "clever-date-match.firebaseapp.com"
+VITE_FIREBASE_MESSAGING_SENDER_ID = "949014130457"
+VITE_FIREBASE_PROJECT_ID = "clever-date-match"
+VITE_FIREBASE_STORAGE_BUCKET = "clever-date-match.firebasestorage.app"

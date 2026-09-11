@@ -3,6 +3,13 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { User } from '@/types';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import {
+  createFirebaseEmailAccount,
+  signInFirebaseEmail,
+  sendFirebasePasswordReset,
+  isFirebaseConfigured,
+  toFriendlyAuthError,
+} from '@/lib/firebase';
 
 interface AuthContextType {
   user: User | null;
@@ -11,12 +18,8 @@ interface AuthContextType {
   loginWithEmail: (email: string, password: string) => Promise<void>;
   loginWithPhone: (phone: string, password: string) => Promise<void>;
   loginWithGoogle: (accessToken: string) => Promise<void>;
-  registerWithEmail: (email: string, password: string, country: string) => Promise<User & { emailCodeSent?: boolean }>;
-  registerWithPhone: (phone: string, password: string, country: string) => Promise<void>;
-  sendOtp: (phone: string) => Promise<{ otp?: string }>;
-  verifyOtp: (phone: string, otp: string) => Promise<void>;
+  registerWithEmail: (email: string, password: string, country: string) => Promise<User>;
   forgotPassword: (email: string) => Promise<void>;
-  resetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
   completeAuth: (user: User) => void;
   logout: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
@@ -54,7 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginEmailMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      return apiRequest('POST', '/auth/login', { email, password }) as Promise<User>;
+      if (!isFirebaseConfigured()) throw new Error('Sign-in is not available right now. Please try again later.');
+      const firebaseUser = await signInFirebaseEmail(email, password);
+      return apiRequest('POST', '/auth/firebase/sync', {
+        idToken: await firebaseUser.getIdToken(),
+      }) as Promise<User>;
     },
     onSuccess: completeAuth,
   });
@@ -73,45 +80,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: completeAuth,
   });
 
-  // Register does NOT auto-navigate — caller decides (may need email verification first)
+  // Firebase creates the identity and sends the real verification link. The
+  // local account is synced immediately so the user can finish their profile.
   const registerEmailMutation = useMutation({
     mutationFn: async ({ email, password, country }: { email: string; password: string; country: string }) => {
-      return apiRequest('POST', '/auth/register', { email, password, confirmPassword: password, country }) as Promise<User & { emailCodeSent?: boolean }>;
+      if (!isFirebaseConfigured()) throw new Error('Account creation is not available right now. Please try again later.');
+      const firebaseUser = await createFirebaseEmailAccount(email, password);
+      return apiRequest('POST', '/auth/firebase/sync', {
+        idToken: await firebaseUser.getIdToken(),
+        country,
+        allowUnverifiedEmail: true,
+      }) as Promise<User>;
     },
     onSuccess: (data) => {
       queryClient.setQueryData(['/api/auth/me'], data);
     },
   });
 
-  const registerPhoneMutation = useMutation({
-    mutationFn: async ({ phone, password, country }: { phone: string; password: string; country: string }) => {
-      return apiRequest('POST', '/auth/register-phone', { phone, password, confirmPassword: password, country }) as Promise<User>;
-    },
-    onSuccess: completeAuth,
-  });
-
-  const sendOtpMutation = useMutation({
-    mutationFn: async (phone: string) => {
-      return apiRequest('POST', '/auth/send-otp', { phone }) as Promise<{ otp?: string }>;
-    },
-  });
-
-  const verifyOtpMutation = useMutation({
-    mutationFn: async ({ phone, otp }: { phone: string; otp: string }) => {
-      return apiRequest('POST', '/auth/verify-otp', { phone, otp }) as Promise<User>;
-    },
-    onSuccess: completeAuth,
-  });
-
   const forgotPasswordMutation = useMutation({
     mutationFn: async (email: string) => {
-      return apiRequest('POST', '/auth/forgot-password', { email });
-    },
-  });
-
-  const resetPasswordMutation = useMutation({
-    mutationFn: async ({ email, code, newPassword }: { email: string; code: string; newPassword: string }) => {
-      return apiRequest('POST', '/auth/reset-password', { email, code, newPassword });
+      if (!isFirebaseConfigured()) throw new Error('Password recovery is not available right now. Please try again later.');
+      await sendFirebasePasswordReset(email);
+      return { success: true };
     },
   });
 
@@ -152,20 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         registerWithEmail: async (email, password, country) => {
           return registerEmailMutation.mutateAsync({ email, password, country });
         },
-        registerWithPhone: async (phone, password, country) => {
-          await registerPhoneMutation.mutateAsync({ phone, password, country });
-        },
-        sendOtp: async (phone) => {
-          return sendOtpMutation.mutateAsync(phone);
-        },
-        verifyOtp: async (phone, otp) => {
-          await verifyOtpMutation.mutateAsync({ phone, otp });
-        },
         forgotPassword: async (email) => {
           await forgotPasswordMutation.mutateAsync(email);
-        },
-        resetPassword: async (email, code, newPassword) => {
-          await resetPasswordMutation.mutateAsync({ email, code, newPassword });
         },
         completeAuth,
         logout: async () => {
