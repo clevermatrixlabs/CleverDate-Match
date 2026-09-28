@@ -115,6 +115,9 @@ export const transactions = pgTable("transactions", {
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   type: text("type", { enum: ["deposit", "withdrawal", "gift", "fee"] }).notNull(),
   status: text("status", { enum: ["pending", "completed", "failed"] }).default("pending"),
+  paymentProvider: text("payment_provider"),
+  paymentReference: text("payment_reference"),
+  planId: text("plan_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

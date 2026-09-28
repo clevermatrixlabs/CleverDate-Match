@@ -97,11 +97,11 @@ type VerificationRecord = {
   };
 };
 
-type FlutterwaveStatus = {
+type PayPalStatus = {
   configured: boolean;
-  publicKeyMasked: string;
-  secretKeyMasked: string;
-  webhookConfigured: boolean;
+  clientIdMasked: string;
+  clientSecretMasked: string;
+  environment: 'sandbox' | 'live';
   dashboardUrl: string;
 };
 
@@ -174,11 +174,11 @@ export default function AdminDashboardPage() {
     },
   });
 
-  const flwQuery = useQuery<FlutterwaveStatus>({
-    queryKey: ['/api/admin/flutterwave-status'],
+  const paypalQuery = useQuery<PayPalStatus>({
+    queryKey: ['/api/admin/paypal-status'],
     enabled: isAdmin,
     queryFn: async () => {
-      const res = await fetch('/api/admin/flutterwave-status', { credentials: 'include' });
+      const res = await fetch('/api/admin/paypal-status', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed');
       return res.json();
     },
@@ -319,7 +319,6 @@ export default function AdminDashboardPage() {
 
   const stats = statsQuery.data;
   const users = usersQuery.data || [];
-  const flw = flwQuery.data;
   const socials = socialsQuery.data || [];
   const verifications = verificationsQuery.data || [];
   const pendingVerifications = verifications.filter(v => v.status === 'pending_review' || v.status === 'pending');
@@ -379,32 +378,32 @@ export default function AdminDashboardPage() {
           ))}
         </section>
 
-        {/* ── Flutterwave account status ────────────────────── */}
+        {/* ── PayPal account status ──────────────────────────── */}
         <Card className="border-green-200 bg-green-50/30">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-green-800">
               <CreditCard className="h-5 w-5" />
-              Flutterwave payment account
+              PayPal Business payment account
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {flwQuery.isLoading ? (
+            {paypalQuery.isLoading ? (
               <p className="text-sm text-gray-500">Loading...</p>
             ) : (
               <div className="space-y-4">
                 {/* Connection status */}
                 <div className="flex items-center gap-3">
-                  {flw?.configured ? (
+                  {paypalQuery.data?.configured ? (
                     <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
                   ) : (
                     <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
                   )}
                   <div>
-                    <p className={`font-semibold text-sm ${flw?.configured ? 'text-green-700' : 'text-red-700'}`}>
-                      {flw?.configured ? 'Connected — payments are live' : 'Not connected — payments are disabled'}
+                    <p className={`font-semibold text-sm ${paypalQuery.data?.configured ? 'text-green-700' : 'text-red-700'}`}>
+                      {paypalQuery.data?.configured ? `Connected — ${paypalQuery.data.environment} payments` : 'Not connected — payments are disabled'}
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      All payments go directly to your Flutterwave account
+                      All payments go directly to your PayPal Business account
                     </p>
                   </div>
                 </div>
@@ -412,51 +411,50 @@ export default function AdminDashboardPage() {
                 {/* Key status rows */}
                 <div className="grid sm:grid-cols-3 gap-3">
                   <div className="bg-white border rounded-xl p-3">
-                    <p className="text-xs font-medium text-gray-500 mb-1">Public Key</p>
+                    <p className="text-xs font-medium text-gray-500 mb-1">Client ID</p>
                     <p className="font-mono text-sm text-gray-800 truncate">
-                      {flw?.publicKeyMasked || <span className="text-red-400 italic">Not set</span>}
+                      {paypalQuery.data?.clientIdMasked || <span className="text-red-400 italic">Not set</span>}
                     </p>
                   </div>
                   <div className="bg-white border rounded-xl p-3">
-                    <p className="text-xs font-medium text-gray-500 mb-1">Secret Key</p>
+                    <p className="text-xs font-medium text-gray-500 mb-1">Client Secret</p>
                     <p className="font-mono text-sm text-gray-800 truncate">
-                      {flw?.secretKeyMasked || <span className="text-red-400 italic">Not set</span>}
+                      {paypalQuery.data?.clientSecretMasked || <span className="text-red-400 italic">Not set</span>}
                     </p>
                   </div>
                   <div className="bg-white border rounded-xl p-3">
-                    <p className="text-xs font-medium text-gray-500 mb-1">Webhook Secret</p>
-                    <p className="text-sm">
-                      {flw?.webhookConfigured
-                        ? <span className="text-green-600 font-medium">✓ Configured</span>
-                        : <span className="text-amber-500 italic">Optional — not set</span>}
+                    <p className="text-xs font-medium text-gray-500 mb-1">Environment</p>
+                    <p className={`text-sm font-medium ${paypalQuery.data?.environment === 'live' ? 'text-green-600' : 'text-amber-600'}`}>
+                      {paypalQuery.data?.environment || 'unknown'}
                     </p>
                   </div>
                 </div>
 
                 {/* Setup instructions */}
-                {!flw?.configured && (
+                {!paypalQuery.data?.configured && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
-                    <p className="font-semibold mb-2">How to connect your Flutterwave account:</p>
+                    <p className="font-semibold mb-2">How to connect your PayPal Business account:</p>
                     <ol className="list-decimal list-inside space-y-1 text-amber-700">
-                      <li>Log in to your Flutterwave dashboard (link below)</li>
-                      <li>Go to <strong>Settings → API Keys</strong></li>
-                      <li>Copy your <strong>Public Key</strong> and <strong>Secret Key</strong></li>
+                      <li>Open PayPal Developer Dashboard (link below)</li>
+                      <li>Open <strong>Apps &amp; Credentials</strong> and choose the correct environment</li>
+                      <li>Copy the app's <strong>Client ID</strong> and <strong>Secret</strong></li>
                       <li>Open the <strong>Replit Secrets panel</strong> (🔒 icon) and add:</li>
                     </ol>
                     <div className="mt-3 bg-amber-100 rounded-lg p-3 font-mono text-xs space-y-1">
-                      <div><span className="text-amber-900">VITE_FLUTTERWAVE_PUBLIC_KEY</span> = FLWPUBK-xxx...</div>
-                      <div><span className="text-amber-900">FLUTTERWAVE_SECRET_KEY</span> = FLWSECK-xxx...</div>
+                      <div><span className="text-amber-900">PAYPAL_CLIENT_ID</span> = your-client-id</div>
+                      <div><span className="text-amber-900">PAYPAL_CLIENT_SECRET</span> = your-client-secret</div>
+                      <div><span className="text-amber-900">PAYPAL_ENVIRONMENT</span> = sandbox or live</div>
                     </div>
                   </div>
                 )}
 
                 <a
-                  href={flw?.dashboardUrl || 'https://dashboard.flutterwave.com'}
+                  href={paypalQuery.data?.dashboardUrl || 'https://developer.paypal.com/dashboard/'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-sm text-green-700 hover:text-green-800 font-medium"
                 >
-                  Open Flutterwave Dashboard <ExternalLink className="h-3.5 w-3.5" />
+                  Open PayPal Developer Dashboard <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               </div>
             )}

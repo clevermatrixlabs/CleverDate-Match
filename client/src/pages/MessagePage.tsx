@@ -96,7 +96,7 @@ export default function MessagePage() {
             </Button>
 
             <p className="text-xs text-gray-400 text-center">
-              Secure checkout via Flutterwave · Cancel anytime
+              Secure checkout via PayPal · Cancel anytime
             </p>
           </div>
         </div>

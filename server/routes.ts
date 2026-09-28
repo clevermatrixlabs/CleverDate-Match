@@ -1594,7 +1594,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================================
-  // Payment / Flutterwave routes
+  // Payment routes
   // ============================================================
 
   /** Exchange rates — no auth required, cached by client */
@@ -1632,144 +1632,204 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   }
 
-  /**
-   * Verify a Flutterwave transaction and activate subscription.
-   * Called by the frontend after the Flutterwave callback.
-   */
-  app.post("/api/payment/flutterwave/verify", requireAuth, async (req: any, res) => {
+  const PAYPAL_PLANS: Record<string, { name: string; amount: string; period: string }> = {
+    basic: { name: "Basic", amount: "15.00", period: "1 month" },
+    silver: { name: "Silver", amount: "45.00", period: "3 months" },
+    gold: { name: "Gold", amount: "110.00", period: "7 months" },
+    diamond: { name: "Diamond", amount: "29.99", period: "1 month" },
+  };
+
+  const getPayPalEnvironment = () => process.env.PAYPAL_ENVIRONMENT === "live" ? "live" : "sandbox";
+  const getPayPalApiBase = () =>
+    getPayPalEnvironment() === "live"
+      ? "https://api-m.paypal.com"
+      : "https://api-m.sandbox.paypal.com";
+
+  async function getPayPalAccessToken(): Promise<string> {
+    const clientId = process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error("PayPal credentials are not configured");
+    }
+
+    const response = await fetch(`${getPayPalApiBase()}/v1/oauth2/token`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: "grant_type=client_credentials",
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`PayPal authentication failed (${response.status}): ${body.slice(0, 200)}`);
+    }
+    const data = await response.json() as { access_token?: string };
+    if (!data.access_token) throw new Error("PayPal did not return an access token");
+    return data.access_token;
+  }
+
+  async function payPalRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const accessToken = await getPayPalAccessToken();
+    const response = await fetch(`${getPayPalApiBase()}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(init.headers || {}),
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = body?.message || body?.name || `PayPal request failed (${response.status})`;
+      throw new Error(message);
+    }
+    return body as T;
+  }
+
+  const paypalConfigured = () => Boolean(
+    process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET,
+  );
+
+  app.get("/api/payment/paypal/config", requireAuth, (_req, res) => {
+    res.json({
+      configured: paypalConfigured(),
+      clientId: paypalConfigured() ? process.env.PAYPAL_CLIENT_ID : null,
+      environment: getPayPalEnvironment(),
+      currency: "USD",
+    });
+  });
+
+  app.post("/api/payment/paypal/create-order", requireAuth, async (req: any, res) => {
     try {
+      if (!paypalConfigured()) {
+        return res.status(503).json({ message: "PayPal is not configured. Add the PayPal Business credentials first." });
+      }
+
       const user = req.user as any;
-      const { transactionId, planId } = req.body;
+      const { planId } = req.body;
+      const plan = PAYPAL_PLANS[planId];
+      if (!plan) return res.status(400).json({ message: "Invalid subscription plan" });
 
-      if (!transactionId || !planId) {
-        return res.status(400).json({ message: "transactionId and planId are required" });
-      }
-
-      const FLW_SECRET = process.env.FLUTTERWAVE_SECRET_KEY;
-
-      if (!FLW_SECRET) {
-        // Demo / dev mode — activate without verifying
-        await activateSubscriptionForUser(user.id, planId);
-        return res.json({ success: true, message: "Subscription activated (dev mode)" });
-      }
-
-      // Verify with Flutterwave API
-      const verifyResp = await fetch(`https://api.flutterwave.com/v3/transactions/${transactionId}/verify`, {
-        headers: { Authorization: `Bearer ${FLW_SECRET}`, "Content-Type": "application/json" },
+      const order = await payPalRequest<any>("/v2/checkout/orders", {
+        method: "POST",
+        headers: { "PayPal-Request-Id": `tcd-${user.id}-${planId}-${crypto.randomUUID()}` },
+        body: JSON.stringify({
+          intent: "CAPTURE",
+          purchase_units: [{
+            reference_id: `tcd-${user.id}-${planId}`,
+            custom_id: `user:${user.id}:plan:${planId}`,
+            description: `${plan.name} subscription — ${plan.period}`,
+            amount: { currency_code: "USD", value: plan.amount },
+          }],
+          application_context: {
+            brand_name: "Clever Date Match",
+            user_action: "PAY_NOW",
+            shipping_preference: "NO_SHIPPING",
+          },
+        }),
       });
-      const data: any = await verifyResp.json();
 
-      if (data.status !== "success" || data.data?.status !== "successful") {
-        return res.status(402).json({ message: "Payment could not be verified with Flutterwave. Please contact support." });
+      if (!order.id) throw new Error("PayPal did not return an order ID");
+      res.json({ orderId: order.id, amount: plan.amount, currency: "USD" });
+    } catch (e: any) {
+      console.error("[PayPal create order]", e?.message || e);
+      res.status(502).json({ message: "PayPal checkout could not be started. Please try again." });
+    }
+  });
+
+  app.post("/api/payment/paypal/capture-order", requireAuth, async (req: any, res) => {
+    try {
+      if (!paypalConfigured()) {
+        return res.status(503).json({ message: "PayPal is not configured. Add the PayPal Business credentials first." });
       }
 
-      // Confirm the payment belongs to the right user
-      const customerEmail = data.data?.customer?.email || "";
-      const customerPhone = data.data?.customer?.phone_number || "";
+      const user = req.user as any;
+      const { orderId, planId } = req.body;
+      const plan = PAYPAL_PLANS[planId];
+      if (!orderId || typeof orderId !== "string" || !plan) {
+        return res.status(400).json({ message: "A valid PayPal order and subscription plan are required" });
+      }
+
+      const existingTransaction = await storage.getTransactionByPaymentReference("paypal", orderId);
+      if (existingTransaction) {
+        if (existingTransaction.userId !== user.id) {
+          return res.status(403).json({ message: "This PayPal order belongs to another account." });
+        }
+        if (existingTransaction.status === "completed") {
+          return res.json({ success: true, message: "Subscription already activated" });
+        }
+      }
+
+      const capture = await payPalRequest<any>(`/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {
+        method: "POST",
+        headers: { "PayPal-Request-Id": `capture-${orderId}` },
+        body: JSON.stringify({}),
+      });
+
+      const purchaseUnit = capture.purchase_units?.[0];
+      const capturedPayment = purchaseUnit?.payments?.captures?.[0];
+      const customId = purchaseUnit?.custom_id;
+      const capturedAmount = capturedPayment?.amount;
+      const expectedCustomId = `user:${user.id}:plan:${planId}`;
+
       if (
-        customerEmail && user.email && customerEmail.toLowerCase() !== user.email.toLowerCase() &&
-        customerPhone && user.phone && customerPhone !== user.phone
+        capture.status !== "COMPLETED" ||
+        capturedPayment?.status !== "COMPLETED" ||
+        customId !== expectedCustomId ||
+        capturedAmount?.currency_code !== "USD" ||
+        capturedAmount?.value !== plan.amount
       ) {
-        return res.status(400).json({ message: "Payment customer mismatch — please contact support." });
+        return res.status(402).json({ message: "PayPal payment could not be verified. Please contact support before trying again." });
       }
 
       await activateSubscriptionForUser(user.id, planId);
-
-      // Log the transaction
-      await storage.createTransaction({
-        userId: user.id,
-        amount: String(data.data?.amount || 0),
-        type: "deposit",
-        status: "completed",
-      });
+      if (existingTransaction) {
+        // A previous incomplete request can be completed without creating a duplicate payment record.
+        await storage.createTransaction({
+          userId: user.id,
+          amount: plan.amount,
+          type: "deposit",
+          status: "completed",
+          paymentProvider: "paypal",
+          paymentReference: orderId,
+          planId,
+        });
+      } else {
+        await storage.createTransaction({
+          userId: user.id,
+          amount: plan.amount,
+          type: "deposit",
+          status: "completed",
+          paymentProvider: "paypal",
+          paymentReference: orderId,
+          planId,
+        });
+      }
 
       res.json({ success: true, message: "Subscription activated" });
     } catch (e: any) {
-      console.error("[FLW verify]", e?.message);
-      res.status(500).json({ message: "Payment verification failed. Please try again." });
+      console.error("[PayPal capture order]", e?.message || e);
+      res.status(502).json({ message: "PayPal payment verification failed. Please try again." });
     }
   });
 
-  /**
-   * Flutterwave webhook (called directly by Flutterwave servers).
-   * Used for auto-renewal and server-side confirmation.
-   */
-  app.post("/api/payment/flutterwave/webhook", async (req, res) => {
-    try {
-      const secret = process.env.FLUTTERWAVE_WEBHOOK_SECRET;
-      if (secret) {
-        const hash = req.headers["verif-hash"];
-        if (hash !== secret) {
-          return res.status(401).json({ message: "Invalid webhook signature" });
-        }
-      }
-      const event = req.body;
-      if (event?.event === "charge.completed" && event?.data?.status === "successful") {
-        const txRef: string = event.data.tx_ref || "";
-        // tx_ref format: TCD-{userId}-{planId}-{timestamp}
-        const parts = txRef.split("-");
-        if (parts.length >= 3 && parts[0] === "TCD") {
-          const userId = parseInt(parts[1], 10);
-          const planId = parts[2];
-          if (!isNaN(userId) && planId) {
-            await activateSubscriptionForUser(userId, planId).catch(e =>
-              console.error("[FLW webhook] activation error:", e?.message)
-            );
-          }
-        }
-      }
-      res.json({ received: true });
-    } catch (e: any) {
-      console.error("[FLW webhook]", e?.message);
-      res.status(500).json({ message: "Webhook processing failed" });
-    }
-  });
-
-  /**
-   * Card / payment error report — frontend calls this when Flutterwave returns failure.
-   * AI analyses the error and notifies admin.
-   */
-  app.post("/api/payment/card-error", requireAuth, async (req: any, res) => {
-    try {
-      const user = req.user as any;
-      const { planId, flwStatus, txRef } = req.body;
-
-      const summary = [
-        `User ID   : ${user.id}`,
-        `Email     : ${user.email || "(phone user)"}`,
-        `Country   : ${user.country || "unknown"}`,
-        `Plan      : ${planId}`,
-        `FLW status: ${flwStatus}`,
-        `TX ref    : ${txRef}`,
-        `Time      : ${new Date().toISOString()}`,
-      ].join("\n");
-
-      // Notify admin
-      await sendAdminNotification("Payment failure — manual review needed", summary);
-
-      console.warn("[card-error] Payment failure reported:\n", summary);
-      res.json({ received: true });
-    } catch (e: any) {
-      console.error("[card-error]", e?.message);
-      res.status(500).json({ message: "Failed to report error" });
-    }
-  });
-
-  // ── Flutterwave account status (admin) ──────────────────────────────────────
-  app.get("/api/admin/flutterwave-status", requireAdmin, (_req, res) => {
-    const pubKey = process.env.VITE_FLUTTERWAVE_PUBLIC_KEY || "";
-    const secretKey = process.env.FLUTTERWAVE_SECRET_KEY || "";
-    const webhookSecret = process.env.FLUTTERWAVE_WEBHOOK_SECRET || "";
-
+  app.get("/api/admin/paypal-status", requireAdmin, (_req, res) => {
+    const clientId = process.env.PAYPAL_CLIENT_ID || "";
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET || "";
     const mask = (key: string) =>
       key.length > 12 ? key.slice(0, 8) + "•••••••••" + key.slice(-4) : key ? "••••••••" : "";
 
     res.json({
-      configured: !!(pubKey && secretKey),
-      publicKeyMasked: mask(pubKey),
-      secretKeyMasked: mask(secretKey),
-      webhookConfigured: !!webhookSecret,
-      dashboardUrl: "https://dashboard.flutterwave.com",
+      configured: paypalConfigured(),
+      clientIdMasked: mask(clientId),
+      clientSecretMasked: mask(clientSecret),
+      environment: getPayPalEnvironment(),
+      dashboardUrl: "https://www.paypal.com/businessmanage/",
     });
   });
 

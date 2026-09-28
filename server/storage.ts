@@ -78,6 +78,7 @@ export interface IStorage {
   // Transaction methods
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
   getTransactions(userId: number): Promise<Transaction[]>;
+  getTransactionByPaymentReference(paymentProvider: string, paymentReference: string): Promise<Transaction | undefined>;
 
   // Social methods
   createSocial(social: InsertSocial): Promise<Social>;
@@ -382,6 +383,12 @@ export class MemStorage implements IStorage {
     return Array.from(this.transactions.values())
       .filter(tx => tx.userId === userId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async getTransactionByPaymentReference(paymentProvider: string, paymentReference: string): Promise<Transaction | undefined> {
+    return Array.from(this.transactions.values()).find(
+      tx => tx.paymentProvider === paymentProvider && tx.paymentReference === paymentReference,
+    );
   }
 
   // Social methods
@@ -841,6 +848,21 @@ export class DrizzleStorage implements IStorage {
       .where(eq(schema.transactions.userId, userId))
       .orderBy(desc(schema.transactions.createdAt)));
     return results;
+  }
+
+  async getTransactionByPaymentReference(paymentProvider: string, paymentReference: string): Promise<Transaction | undefined> {
+    if (!db) return undefined;
+    const results = await withRetry(() => db
+      .select()
+      .from(schema.transactions)
+      .where(
+        and(
+          eq(schema.transactions.paymentProvider, paymentProvider),
+          eq(schema.transactions.paymentReference, paymentReference),
+        ),
+      )
+      .limit(1));
+    return results[0];
   }
 
   // Social methods
