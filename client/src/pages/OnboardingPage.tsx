@@ -83,7 +83,6 @@ function GoogleSignInButton({ isLogin, onSuccess, onError }: {
 }) {
   const [loading, setLoading] = useState(false);
   const login = useGoogleLogin({
-    prompt: isLogin ? 'select_account' : undefined,
     onSuccess: (tokenResponse) => {
       setLoading(false);
       onSuccess(tokenResponse.access_token);
@@ -374,16 +373,20 @@ export default function OnboardingPage() {
             <h2 className="text-2xl font-bold text-gray-800 mb-1">{isLogin ? 'Welcome back' : 'Create account'}</h2>
             <p className="text-gray-500 text-sm mb-4">{isLogin ? 'Sign in to continue your journey' : 'Join thousands finding real love'}</p>
 
-            {/* Google Sign-In — real OAuth when configured, styled fallback otherwise */}
+            {/* Google Sign-In — real OAuth when configured */}
             {GOOGLE_CONFIGURED ? (
               <GoogleSignInButton isLogin={isLogin} onSuccess={handleGoogleSuccess} onError={() => toast({ variant: 'destructive', title: 'Google sign-in failed', description: 'Could not connect to Google. Try email instead.' })} />
             ) : (
               <button
-                className="w-full h-14 flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 bg-white hover:bg-gray-50 transition-colors shadow-sm"
-                onClick={() => setScreen(isLogin ? 'email-login' : 'email-signup')}
+                className="w-full h-14 flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors shadow-sm"
+                onClick={() => toast({
+                  variant: 'destructive',
+                  title: 'Google sign-in is not available yet',
+                  description: 'Please use email or phone sign-in for now.',
+                })}
               >
                 <GoogleIcon size={22} />
-                <span className="font-semibold text-gray-700">{isLogin ? 'Continue with Google' : 'Sign up with Google'}</span>
+                <span className="font-semibold text-gray-500">Google sign-in unavailable</span>
               </button>
             )}
 
