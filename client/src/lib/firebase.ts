@@ -84,7 +84,10 @@ export function toFriendlyAuthError(error: unknown, fallback = 'Something went w
     'auth/invalid-verification-code': 'That code is not correct. Please check it and try again.',
     'auth/code-expired': 'That code has expired. Please request a new one.',
     'auth/session-expired': 'Your verification session expired. Please request a new code.',
-    'auth/captcha-check-failed': 'Something went wrong sending your code — please try again.',
+    'auth/captcha-check-failed': 'Phone verification could not complete. Check that this site is listed in Firebase Console under Authentication → Settings → Authorized domains, then try again.',
+    'auth/invalid-app-credential': 'Phone verification could not start. Check that this site is listed in Firebase Console under Authentication → Settings → Authorized domains, then try again.',
+    'auth/missing-recaptcha-token': 'Phone verification could not start. Check that this site is listed in Firebase Console under Authentication → Settings → Authorized domains, then try again.',
+    'auth/operation-not-allowed': 'Phone sign-in is not enabled in Firebase Console. Enable Phone provider under Authentication → Sign-in method, then try again.',
     'auth/too-many-requests': 'Too many attempts. Please wait a little while and try again.',
     'auth/quota-exceeded': 'We have reached the message limit for now. Please try again later.',
     'auth/email-already-in-use': 'An account with that email already exists. Try signing in instead.',
@@ -94,8 +97,13 @@ export function toFriendlyAuthError(error: unknown, fallback = 'Something went w
     'auth/weak-password': 'Please choose a stronger password with at least 8 characters.',
     'auth/network-request-failed': 'We could not connect just now. Please check your connection and try again.',
   };
-  if (raw.toLowerCase().includes('recaptcha') || raw.toLowerCase().includes('already been rendered')) {
-    return new Error('Something went wrong sending your code — please try again.');
+  const lowerRaw = raw.toLowerCase();
+  if (
+    lowerRaw.includes('recaptcha') ||
+    lowerRaw.includes('already been rendered') ||
+    lowerRaw.includes('containerorid')
+  ) {
+    return new Error('Phone verification could not start. Check that this site is listed in Firebase Console under Authentication → Settings → Authorized domains, then try again.');
   }
   return new Error((code && messages[code]) || (raw && !/firebase|auth\//i.test(raw) ? raw : fallback));
 }
@@ -136,9 +144,18 @@ export function createFirebasePhoneChallenge(
   containerId: string,
 ): { confirmation: Promise<ConfirmationResult>; cleanup: () => void } {
   const firebaseAuth = requireAuth();
+  const container = document.getElementById(containerId);
+  if (!(container instanceof HTMLElement) || !container.isConnected) {
+    throw new Error(`Phone verification could not start because the reCAPTCHA container "${containerId}" is not attached to the page.`);
+  }
+
   let verifier = phoneRecaptchaVerifiers.get(containerId);
   if (!verifier) {
-    verifier = new RecaptchaVerifier(firebaseAuth, containerId, { size: 'invisible' });
+    // A previous failed attempt can leave Google's iframe markup behind even
+    // after the verifier was removed from the cache. Start with a clean,
+    // attached element and pass the element itself to Firebase.
+    container.replaceChildren();
+    verifier = new RecaptchaVerifier(firebaseAuth, container, { size: 'invisible' });
     phoneRecaptchaVerifiers.set(containerId, verifier);
   }
   const currentUser = firebaseAuth.currentUser;

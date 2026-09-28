@@ -455,7 +455,8 @@ export default function VerificationPage() {
 
         </div>
       </div>
-      <div id="firebase-recaptcha-verification" className="fixed -left-[9999px] top-0 h-px w-px overflow-hidden" aria-hidden="true" />
+      {/* Keep this attached to the DOM: Firebase uses it for the invisible reCAPTCHA challenge. */}
+      <div id="firebase-recaptcha-verification" className="fixed left-0 top-0 h-px w-px overflow-hidden" aria-hidden="true" />
     </div>
   );
 }
