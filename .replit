@@ -51,6 +51,7 @@ VITE_FIREBASE_PROJECT_ID = "clever-date-match"
 VITE_FIREBASE_STORAGE_BUCKET = "clever-date-match.firebasestorage.app"
 VITE_GOOGLE_CLIENT_ID = "949014130457-hm77e1q330hksutjuc7q3rcb3vj4dvj6.apps.googleusercontent.com"
 GOOGLE_CLIENT_ID = "949014130457-hm77e1q330hksutjuc7q3rcb3vj4dvj6.apps.googleusercontent.com"
+PAYPAL_ENVIRONMENT = "live"
 
 [postMerge]
 path = "scripts/post-merge.sh"
