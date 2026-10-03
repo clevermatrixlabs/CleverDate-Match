@@ -500,7 +500,7 @@ export default function AdminDashboardPage() {
               </div>
               <Button
                 onClick={handleAddSocial}
-                disabled={addSocialMutation.isPending || !newUrl.trim()}
+                disabled={addSocialMutation.isLoading || !newUrl.trim()}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
               >
                 <Plus className="h-4 w-4 mr-1" />
@@ -604,10 +604,10 @@ export default function AdminDashboardPage() {
               </div>
               <Button
                 onClick={handleGift}
-                disabled={giftMutation.isPending || !giftUserId}
+                disabled={giftMutation.isLoading || !giftUserId}
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >
-                {giftMutation.isPending ? 'Gifting...' : 'Gift plan'}
+                {giftMutation.isLoading ? 'Gifting...' : 'Gift plan'}
               </Button>
             </div>
             <p className="text-xs text-gray-500 mt-3">
@@ -711,7 +711,7 @@ export default function AdminDashboardPage() {
                                 size="sm"
                                 className="bg-green-600 hover:bg-green-700 text-white h-8 text-xs"
                                 onClick={() => approveVerificationMutation.mutate(v.userId)}
-                                disabled={approveVerificationMutation.isPending}
+                                disabled={approveVerificationMutation.isLoading}
                               >
                                 <UserCheck className="w-3.5 h-3.5 mr-1" /> Approve
                               </Button>
@@ -723,7 +723,7 @@ export default function AdminDashboardPage() {
                                   const reason = window.prompt('Ban reason?', 'Failed identity verification');
                                   if (reason !== null) banUserMutation.mutate({ id: v.userId, reason, banDevice: false });
                                 }}
-                                disabled={banUserMutation.isPending}
+                                disabled={banUserMutation.isLoading}
                               >
                                 <UserX className="w-3.5 h-3.5 mr-1" /> Ban
                               </Button>
@@ -735,7 +735,7 @@ export default function AdminDashboardPage() {
                                   const reason = window.prompt('Ban reason (will also ban device)?', 'Failed identity verification');
                                   if (reason !== null) banUserMutation.mutate({ id: v.userId, reason, banDevice: true });
                                 }}
-                                disabled={banUserMutation.isPending}
+                                disabled={banUserMutation.isLoading}
                               >
                                 <MonitorOff className="w-3.5 h-3.5 mr-1" /> Ban + Device
                               </Button>
@@ -744,7 +744,7 @@ export default function AdminDashboardPage() {
                                 variant="outline"
                                 className="h-8 text-xs"
                                 onClick={() => suspendMutation.mutate({ id: v.userId, suspend: false })}
-                                disabled={suspendMutation.isPending}
+                                disabled={suspendMutation.isLoading}
                               >
                                 Unsuspend
                               </Button>
@@ -795,7 +795,7 @@ export default function AdminDashboardPage() {
                               {v.status !== 'approved' && (
                                 <Button size="sm" variant="outline" className="text-xs h-7 text-green-700 border-green-300"
                                   onClick={() => approveVerificationMutation.mutate(v.userId)}
-                                  disabled={approveVerificationMutation.isPending}>
+                                  disabled={approveVerificationMutation.isLoading}>
                                   Approve
                                 </Button>
                               )}
@@ -805,7 +805,7 @@ export default function AdminDashboardPage() {
                                     const reason = window.prompt('Ban reason?', 'Policy violation');
                                     if (reason !== null) banUserMutation.mutate({ id: v.userId, reason, banDevice: false });
                                   }}
-                                  disabled={banUserMutation.isPending}>
+                                  disabled={banUserMutation.isLoading}>
                                   Ban
                                 </Button>
                               )}
@@ -883,7 +883,7 @@ export default function AdminDashboardPage() {
                             size="sm"
                             variant="outline"
                             onClick={() => verifyMutation.mutate(u.id)}
-                            disabled={verifyMutation.isPending}
+                            disabled={verifyMutation.isLoading}
                           >
                             Verify
                           </Button>
@@ -905,7 +905,7 @@ export default function AdminDashboardPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => suspendMutation.mutate({ id: u.id, suspend: false })}
-                              disabled={suspendMutation.isPending}
+                              disabled={suspendMutation.isLoading}
                             >
                               Unsuspend
                             </Button>
@@ -917,7 +917,7 @@ export default function AdminDashboardPage() {
                                 const reason = window.prompt('Reason for suspension?', 'Violated community guidelines');
                                 if (reason !== null) suspendMutation.mutate({ id: u.id, suspend: true, reason });
                               }}
-                              disabled={suspendMutation.isPending}
+                              disabled={suspendMutation.isLoading}
                             >
                               Suspend
                             </Button>

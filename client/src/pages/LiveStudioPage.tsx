@@ -272,11 +272,11 @@ export default function LiveStudioPage() {
               </div>
               <Button
                 onClick={() => goLiveMutation.mutate()}
-                disabled={goLiveMutation.isPending}
+                disabled={goLiveMutation.isLoading}
                 className="w-full bg-gradient-to-r from-pink-600 to-red-600 hover:from-pink-500 hover:to-red-500 text-white font-bold h-12 text-lg shadow-lg"
               >
                 <Radio className="h-5 w-5 mr-2" />
-                {goLiveMutation.isPending ? 'Starting...' : 'Go Live Now'}
+                {goLiveMutation.isLoading ? 'Starting...' : 'Go Live Now'}
               </Button>
             </div>
           ) : (
@@ -315,12 +315,12 @@ export default function LiveStudioPage() {
                 onClick={() => {
                   if (confirm('End your live stream? This cannot be undone.')) endLiveMutation.mutate();
                 }}
-                disabled={endLiveMutation.isPending}
+                disabled={endLiveMutation.isLoading}
                 variant="destructive"
                 className="w-full"
               >
                 <StopCircle className="h-4 w-4 mr-2" />
-                {endLiveMutation.isPending ? 'Ending...' : 'End Stream'}
+                {endLiveMutation.isLoading ? 'Ending...' : 'End Stream'}
               </Button>
             </div>
           )}
@@ -390,7 +390,7 @@ export default function LiveStudioPage() {
                           variant="ghost"
                           className="h-7 text-xs text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 px-2"
                           onClick={() => inviteMutation.mutate(v.userId)}
-                          disabled={inviteMutation.isPending}
+                          disabled={inviteMutation.isLoading}
                         >
                           <UserPlus className="h-3.5 w-3.5 mr-1" />
                           Invite

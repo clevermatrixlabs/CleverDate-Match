@@ -364,7 +364,7 @@ export default function LiveWatchPage() {
                 <button
                   key={g.id}
                   onClick={() => sendGift(g)}
-                  disabled={giftMutation.isPending}
+                  disabled={giftMutation.isLoading}
                   className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-white/10 transition-colors active:scale-95"
                 >
                   <span className="text-2xl">{g.emoji}</span>

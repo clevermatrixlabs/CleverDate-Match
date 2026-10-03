@@ -274,10 +274,10 @@ export default function MatchPage() {
 
             <button
               onClick={() => savePrefs.mutate()}
-              disabled={savePrefs.isPending}
+              disabled={savePrefs.isLoading}
               className="w-full bg-gradient-to-r from-blue-800 to-blue-500 text-white rounded-2xl py-3.5 font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-60"
             >
-              {savePrefs.isPending ? 'Saving…' : 'Apply Preferences'}
+              {savePrefs.isLoading ? 'Saving…' : 'Apply Preferences'}
             </button>
           </div>
         </div>

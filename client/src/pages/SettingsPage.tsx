@@ -134,9 +134,9 @@ export default function SettingsPage() {
                       size="sm"
                       className="flex-1 bg-blue-700 hover:bg-blue-800 text-white"
                       onClick={handleChangePw}
-                      disabled={!currentPw || !newPw || !confirmPw || changePwMutation.isPending}
+                      disabled={!currentPw || !newPw || !confirmPw || changePwMutation.isLoading}
                     >
-                      {changePwMutation.isPending ? 'Saving…' : 'Save'}
+                      {changePwMutation.isLoading ? 'Saving…' : 'Save'}
                     </Button>
                   </div>
                 </div>
@@ -244,10 +244,10 @@ export default function SettingsPage() {
                     size="sm"
                     variant="destructive"
                     className="flex-1"
-                    disabled={deleteText !== 'DELETE' || deleteMutation.isPending}
+                    disabled={deleteText !== 'DELETE' || deleteMutation.isLoading}
                     onClick={() => deleteMutation.mutate()}
                   >
-                    {deleteMutation.isPending ? 'Deleting…' : 'Delete forever'}
+                    {deleteMutation.isLoading ? 'Deleting…' : 'Delete forever'}
                   </Button>
                 </div>
               </div>

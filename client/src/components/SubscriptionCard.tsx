@@ -26,7 +26,7 @@ export default function SubscriptionCard({ plan }: SubscriptionCardProps) {
       toast({
         variant: "destructive",
         title: "Subscription failed",
-        description: error.message || "Please try again",
+        description: error instanceof Error ? error.message : "Please try again",
       });
     }
   });
@@ -78,9 +78,9 @@ export default function SubscriptionCard({ plan }: SubscriptionCardProps) {
           font-medium rounded-lg transition-colors
         `}
         onClick={handleSubscribe}
-        disabled={subscribeMutation.isPending}
+        disabled={subscribeMutation.isLoading}
       >
-        {subscribeMutation.isPending ? 'Processing...' : plan.ctaText}
+        {subscribeMutation.isLoading ? 'Processing...' : plan.ctaText}
       </button>
     </div>
   );

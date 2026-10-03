@@ -100,7 +100,7 @@ export default function ProfileCreationPage() {
       toast({
         variant: "destructive",
         title: "Profile creation failed",
-        description: error.message || "Please try again",
+        description: error instanceof Error ? error.message : "Please try again",
       });
     }
   });
@@ -433,9 +433,9 @@ export default function ProfileCreationPage() {
               <Button 
                 type="submit" 
                 className="w-full py-3 px-4 bg-primary text-white font-medium rounded-lg shadow-sm hover:bg-primary/90 transition-colors"
-                disabled={profileMutation.isPending}
+                disabled={profileMutation.isLoading}
               >
-                {profileMutation.isPending ? 'Creating Profile...' : 'Create Profile'}
+                {profileMutation.isLoading ? 'Creating Profile...' : 'Create Profile'}
               </Button>
             </form>
           </Form>

@@ -133,10 +133,10 @@ export default function WalletPage() {
                 </div>
                 <button
                   onClick={handleDeposit}
-                  disabled={addFundsMutation.isPending}
+                  disabled={addFundsMutation.isLoading}
                   className="bg-white text-blue-800 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-blue-50 disabled:opacity-60 transition-colors"
                 >
-                  {addFundsMutation.isPending ? '…' : 'Add'}
+                  {addFundsMutation.isLoading ? '…' : 'Add'}
                 </button>
                 <button
                   onClick={() => { setShowDepositInput(false); setDepositAmount(''); }}
@@ -160,10 +160,10 @@ export default function WalletPage() {
                 </div>
                 <button
                   onClick={handleWithdraw}
-                  disabled={withdrawMutation.isPending}
+                  disabled={withdrawMutation.isLoading}
                   className="bg-white text-blue-800 rounded-xl px-4 py-2 text-sm font-semibold hover:bg-blue-50 disabled:opacity-60 transition-colors"
                 >
-                  {withdrawMutation.isPending ? '…' : 'Send'}
+                  {withdrawMutation.isLoading ? '…' : 'Send'}
                 </button>
                 <button
                   onClick={() => { setShowWithdrawInput(false); setWithdrawAmount(''); }}
@@ -207,7 +207,7 @@ export default function WalletPage() {
               <button
                 key={amt}
                 onClick={() => handleSendGift(amt)}
-                disabled={sendGiftMutation.isPending || !matchedUser || balance < amt}
+                disabled={sendGiftMutation.isLoading || !matchedUser || balance < amt}
                 className="bg-blue-50 border border-blue-100 rounded-xl py-3 text-center hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span className="block font-semibold text-blue-700">${amt}</span>
@@ -232,11 +232,11 @@ export default function WalletPage() {
             </div>
             <button
               onClick={() => handleSendGift(parseFloat(giftAmount))}
-              disabled={sendGiftMutation.isPending || !giftAmount || isNaN(parseFloat(giftAmount)) || !matchedUser}
+              disabled={sendGiftMutation.isLoading || !giftAmount || isNaN(parseFloat(giftAmount)) || !matchedUser}
               className="flex items-center gap-1.5 bg-gradient-to-r from-blue-800 to-blue-500 text-white rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-40 hover:opacity-90 transition-opacity"
             >
               <Send className="w-3.5 h-3.5" />
-              {sendGiftMutation.isPending ? 'Sending…' : 'Send'}
+              {sendGiftMutation.isLoading ? 'Sending…' : 'Send'}
             </button>
           </div>
         </CardContent>

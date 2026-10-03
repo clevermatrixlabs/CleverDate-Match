@@ -16,20 +16,27 @@ import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
 let db: any = null;
 
 // Add retry functionality for database operations
-async function withRetry(operation, maxRetries = 5, delay = 1000) {
-  let lastError;
+async function withRetry<T>(operation: () => Promise<T>, maxRetries = 5, delay = 1000): Promise<T> {
+  let lastError: unknown;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       return await operation();
     } catch (error) {
-      console.warn(`Operation failed (attempt ${attempt + 1}/${maxRetries}):`, error.message);
+      console.warn(
+        `Operation failed (attempt ${attempt + 1}/${maxRetries}):`,
+        error instanceof Error ? error.message : error,
+      );
       lastError = error;
       await setTimeoutPromise(delay * Math.pow(2, attempt));
     }
   }
 
   throw lastError;
+}
+
+function dateOrder(value: Date | null | undefined): number {
+  return value?.getTime() ?? 0;
 }
 import { eq, and, not, desc, or, sql, notInArray } from "drizzle-orm";
 
@@ -163,7 +170,7 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentUserId++;
-    const now = new Date().toISOString();
+    const now = new Date();
     const user: User = { 
       ...insertUser, 
       id,
@@ -178,7 +185,7 @@ export class MemStorage implements IStorage {
     // Remove all data linked to this user
     this.users.delete(id);
     for (const [k, v] of this.verifications) if (v.userId === id) this.verifications.delete(k);
-    for (const [k, v] of this.matches) if ((v as any).userId1 === id || (v as any).userId2 === id) this.matches.delete(k);
+    for (const [k, v] of this.matches) if (v.userId === id || v.matchedUserId === id) this.matches.delete(k);
     for (const [k, v] of this.messages) if (v.senderId === id) this.messages.delete(k);
     for (const [k, v] of this.subscriptions) if (v.userId === id) this.subscriptions.delete(k);
     for (const [k, v] of this.transactions) if (v.userId === id) this.transactions.delete(k);
@@ -193,7 +200,7 @@ export class MemStorage implements IStorage {
     const updatedUser = { 
       ...existingUser, 
       ...userData,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date()
     };
     this.users.set(id, updatedUser);
     return updatedUser;
@@ -201,9 +208,7 @@ export class MemStorage implements IStorage {
 
   // Admin helpers
   async listUsers(): Promise<User[]> {
-    return Array.from(this.users.values()).sort((a, b) =>
-      new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()
-    );
+    return Array.from(this.users.values()).sort((a, b) => dateOrder(b.createdAt) - dateOrder(a.createdAt));
   }
   async countUsers(): Promise<number> { return this.users.size; }
   async countVerifiedUsers(): Promise<number> {
@@ -221,7 +226,7 @@ export class MemStorage implements IStorage {
   // Verification methods
   async createVerification(verification: InsertVerification): Promise<Verification> {
     const id = this.currentVerificationId++;
-    const now = new Date().toISOString();
+    const now = new Date();
     const newVerification: Verification = {
       ...verification,
       id,
@@ -238,13 +243,13 @@ export class MemStorage implements IStorage {
   async getVerificationByUserId(userId: number): Promise<Verification | undefined> {
     return Array.from(this.verifications.values())
       .filter(v => v.userId === userId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+      .sort((a, b) => dateOrder(b.createdAt) - dateOrder(a.createdAt))[0];
   }
 
   // Match methods
   async createMatch(match: InsertMatch): Promise<Match> {
     const id = this.currentMatchId++;
-    const now = new Date().toISOString();
+    const now = new Date();
     const newMatch: Match = {
       ...match,
       id,
@@ -265,7 +270,7 @@ export class MemStorage implements IStorage {
         m.status === "accepted" && 
         (m.userId === userId || m.matchedUserId === userId)
       )
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+      .sort((a, b) => dateOrder(b.updatedAt) - dateOrder(a.updatedAt))[0];
   }
 
   async getMatchBetweenUsers(userId1: number, userId2: number): Promise<Match | undefined> {
@@ -286,7 +291,7 @@ export class MemStorage implements IStorage {
     const updatedMatch = { 
       ...existingMatch, 
       ...matchData,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date()
     };
     this.matches.set(id, updatedMatch);
     return updatedMatch;
@@ -327,7 +332,7 @@ export class MemStorage implements IStorage {
   // Message methods
   async createMessage(message: InsertMessage): Promise<Message> {
     const id = this.currentMessageId++;
-    const now = new Date().toISOString();
+    const now = new Date();
     const newMessage: Message = {
       ...message,
       id,
@@ -340,16 +345,16 @@ export class MemStorage implements IStorage {
   async getMessages(matchId: number): Promise<Message[]> {
     return Array.from(this.messages.values())
       .filter(message => message.matchId === matchId)
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      .sort((a, b) => dateOrder(a.timestamp) - dateOrder(b.timestamp));
   }
 
   // Subscription methods
   async createSubscription(subscription: InsertSubscription): Promise<Subscription> {
     const id = this.currentSubscriptionId++;
-    const now = new Date().toISOString();
+    const now = new Date();
     const newSubscription: Subscription = {
       ...subscription,
-      id: id.toString(), // Convert to string to match schema
+      id,
       createdAt: now
     };
     this.subscriptions.set(id, newSubscription);
@@ -363,13 +368,13 @@ export class MemStorage implements IStorage {
   async getUserSubscription(userId: number): Promise<Subscription | undefined> {
     return Array.from(this.subscriptions.values())
       .filter(sub => sub.userId === userId && sub.status === "active")
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+      .sort((a, b) => dateOrder(b.createdAt) - dateOrder(a.createdAt))[0];
   }
 
   // Transaction methods
   async createTransaction(transaction: InsertTransaction): Promise<Transaction> {
     const id = this.currentTransactionId++;
-    const now = new Date().toISOString();
+    const now = new Date();
     const newTransaction: Transaction = {
       ...transaction,
       id,
@@ -382,7 +387,7 @@ export class MemStorage implements IStorage {
   async getTransactions(userId: number): Promise<Transaction[]> {
     return Array.from(this.transactions.values())
       .filter(tx => tx.userId === userId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) => dateOrder(b.createdAt) - dateOrder(a.createdAt));
   }
 
   async getTransactionByPaymentReference(paymentProvider: string, paymentReference: string): Promise<Transaction | undefined> {
@@ -394,7 +399,7 @@ export class MemStorage implements IStorage {
   // Social methods
   async createSocial(social: InsertSocial): Promise<Social> {
     const id = this.currentSocialId++;
-    const now = new Date().toISOString();
+    const now = new Date();
     const newSocial: Social = {
       ...social,
       id,

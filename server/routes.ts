@@ -705,15 +705,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const faceResult = await compareSelfieToPhotos(selfieBase64, profilePhotos);
       console.log(`[verification] DeepFace result for user ${user.id}:`, faceResult);
 
-      faceMatchScore = faceResult.confidence != null
-        ? String(faceResult.confidence.toFixed(3))
-        : null;
+      const faceConfidence = "confidence" in faceResult ? faceResult.confidence : null;
+      faceMatchScore = faceConfidence != null ? faceConfidence.toFixed(3) : null;
 
       if (faceResult.match === "rejected") {
         if (deviceId) {
           await storage.createDeviceBan(
             deviceId,
-            `Profile photo face mismatch (confidence=${faceResult.confidence?.toFixed(3)})`,
+            `Profile photo face mismatch (confidence=${faceConfidence?.toFixed(3)})`,
             undefined,
             req.ip,
           );
@@ -723,7 +722,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: "rejected",
           verificationData: selfieDataOnly,
           faceMatchScore,
-          rejectedReason: `Selfie does not match profile photos (DeepFace confidence=${faceResult.confidence?.toFixed(3)})`,
+          rejectedReason: `Selfie does not match profile photos (DeepFace confidence=${faceConfidence?.toFixed(3)})`,
         });
         await storage.updateUser(user.id, {
           isSuspended: true,
@@ -1240,7 +1239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update user wallet
       const updatedUser = await storage.updateUser(user.id, {
-        walletBalance: (parseFloat(user.walletBalance) || 0) + parseFloat(amount),
+        walletBalance: ((parseFloat(user.walletBalance) || 0) + parseFloat(amount)).toFixed(2),
       });
 
       res.json({
@@ -1276,7 +1275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update user wallet
       const updatedUser = await storage.updateUser(user.id, {
-        walletBalance: parseFloat(user.walletBalance) - parseFloat(amount),
+        walletBalance: (parseFloat(user.walletBalance) - parseFloat(amount)).toFixed(2),
       });
 
       res.json({
@@ -1329,19 +1328,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create fee transaction
       await storage.createTransaction({
         userId: user.id,
-        amount: platformFee,
+        amount: platformFee.toFixed(2),
         type: "fee",
         status: "completed",
       });
 
       // Update sender's wallet
       const updatedSender = await storage.updateUser(user.id, {
-        walletBalance: parseFloat(user.walletBalance) - parseFloat(amount),
+        walletBalance: (parseFloat(user.walletBalance) - parseFloat(amount)).toFixed(2),
       });
 
       // Update recipient's wallet
       await storage.updateUser(recipientId, {
-        walletBalance: (parseFloat(recipient.walletBalance) || 0) + giftAmount,
+        walletBalance: ((parseFloat(recipient.walletBalance ?? "0") || 0) + giftAmount).toFixed(2),
       });
 
       res.json({
@@ -1632,14 +1631,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     await storage.createSubscription({
       userId,
       tier: tier as any,
-      startDate: new Date().toISOString(),
-      endDate: endDate.toISOString(),
+      startDate: new Date(),
+      endDate,
       autoRenew: true,
       status: "active",
     });
     await storage.updateUser(userId, {
       subscriptionTier: tier as any,
-      subscriptionExpiry: endDate.toISOString(),
+      subscriptionExpiry: endDate,
     });
   }
 
@@ -1894,15 +1893,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createSubscription({
         userId: targetUser.id,
         tier: tier as any,
-        startDate: new Date().toISOString(),
-        endDate: endDate.toISOString(),
+        startDate: new Date(),
+        endDate,
         autoRenew: false,
         status: "active",
       });
 
       await storage.updateUser(targetUser.id, {
         subscriptionTier: tier as any,
-        subscriptionExpiry: endDate.toISOString(),
+        subscriptionExpiry: endDate,
       });
 
       const adminEmail = req.user?.email || "admin";
