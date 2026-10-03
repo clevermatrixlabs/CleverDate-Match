@@ -332,6 +332,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function createFirebaseLocalUser(
     firebaseUser: Awaited<ReturnType<typeof lookupFirebaseToken>>,
     country?: string,
+    signupPassword?: string,
   ) {
     const baseUsername = usernameBaseForFirebase(firebaseUser);
     let username = baseUsername;
@@ -343,7 +344,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       username,
       email: firebaseUser.email,
       phone: firebaseUser.phoneNumber,
-      password: await hashPassword(crypto.randomBytes(32).toString("hex")),
+      password: await hashPassword(signupPassword || crypto.randomBytes(32).toString("hex")),
       firstName: nameParts[0],
       lastName: nameParts.slice(1).join(" ") || undefined,
       country,
@@ -356,7 +357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/firebase/sync", async (req, res) => {
     try {
-      const { idToken, country, allowUnverifiedEmail, intent } = req.body;
+      const { idToken, country, allowUnverifiedEmail, intent, password } = req.body;
       if (!idToken || typeof idToken !== "string") {
         return res.status(400).json({ message: "We could not confirm your account. Please try again." });
       }
@@ -367,6 +368,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (firebaseUser.email && !firebaseUser.emailVerified && !allowUnverifiedEmail) {
         return res.status(403).json({ message: "Please verify your email address before continuing." });
+      }
+      if (intent === "signup" && firebaseUser.phoneNumber &&
+          (typeof password !== "string" || password.length < 8 || password.length > 128)) {
+        return res.status(400).json({ message: "Choose a password with at least 8 characters to finish phone sign-up." });
       }
 
       let user = firebaseUser.email
@@ -389,7 +394,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (country && !user.country) updates.country = country;
         if (Object.keys(updates).length) user = await storage.updateUser(user.id, updates) || user;
       } else {
-        user = await createFirebaseLocalUser(firebaseUser, country);
+        user = await createFirebaseLocalUser(
+          firebaseUser,
+          country,
+          intent === "signup" && firebaseUser.phoneNumber ? password : undefined,
+        );
         const totalUsers = await storage.countUsers();
         if (totalUsers <= 100) {
           const trialEnd = new Date();
@@ -652,11 +661,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const {
         selfieBase64,   // JPEG data-URL captured from camera on the client
         deviceId,
-        phoneVerified,
       } = req.body;
 
       if (!selfieBase64 || typeof selfieBase64 !== "string") {
         return res.status(400).json({ message: "Selfie image is required. Please complete the face scan." });
+      }
+
+      const freshUser = await storage.getUser(user.id) as any;
+      if (!freshUser?.isPhoneVerified || !freshUser?.phone) {
+        return res.status(403).json({ message: "Verify your phone number with the SMS code before completing identity verification." });
       }
 
       // ── Device ban check ─────────────────────────────────────────────────────
@@ -680,7 +693,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { compareSelfieToPhotos } = await import("./deepface");
 
       // Collect profile photos stored for this user (as base64 data-URLs)
-      const freshUser = await storage.getUser(user.id) as any;
       const profilePhotos: string[] = [
         freshUser?.profilePicture,
         freshUser?.additionalPicture1,
@@ -755,7 +767,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await storage.updateUser(user.id, {
         isVerified: true,
-        isPhoneVerified: !!phoneVerified,
       } as any);
 
       return res.json({ success: true, message: "Verification successful" });

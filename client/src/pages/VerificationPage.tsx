@@ -11,13 +11,14 @@ import { Shield, Camera, CheckCircle2, Phone, RefreshCw, SmilePlus } from 'lucid
 import { runLivenessCheck, type LivenessProgress } from '@/lib/faceVerification';
 import { getDeviceId } from '@/lib/deviceFingerprint';
 import {
+  auth,
   createFirebasePhoneChallenge,
   confirmFirebasePhoneCode,
   isFirebaseConfigured,
   normalizePhoneNumber,
   toFriendlyAuthError,
 } from '@/lib/firebase';
-import type { ConfirmationResult } from 'firebase/auth';
+import type { ConfirmationResult, User as FirebaseUser } from 'firebase/auth';
 
 type Step = 'intro' | 'live-scan' | 'phone' | 'submitting' | 'done' | 'suspended' | 'banned';
 
@@ -37,6 +38,7 @@ export default function VerificationPage() {
   const [otp, setOtp]           = useState('');
   const [otpSent, setOtpSent]   = useState(false);
   const [phoneConfirmation, setPhoneConfirmation] = useState<ConfirmationResult | null>(null);
+  const [confirmedPhoneUser, setConfirmedPhoneUser] = useState<FirebaseUser | null>(null);
   const [otpLoading, setOtpLoading]   = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
 
@@ -64,7 +66,7 @@ export default function VerificationPage() {
     };
   }, []);
 
-  const phoneAlreadyVerified = !!((user as any)?.isPhoneVerified) || !!((user as any)?.phone);
+  const phoneAlreadyVerified = !!(user as any)?.isPhoneVerified;
 
   // ── Verification submit mutation ────────────────────────────────────────────
   const verifyMutation = useMutation({
@@ -127,7 +129,7 @@ export default function VerificationPage() {
         streamRef.current = null;
         setSelfieResult(result);
         if (phoneAlreadyVerified) {
-          submitVerification(result.snapshotDataUrl, true);
+          submitVerification(result.snapshotDataUrl);
         } else {
           setStep('phone');
         }
@@ -151,12 +153,36 @@ export default function VerificationPage() {
     setOtpLoading(true);
     try {
       if (!isFirebaseConfigured()) throw new Error('Phone verification is not available right now. Please try again later.');
-      const challenge = createFirebasePhoneChallenge(normalizedPhone, 'firebase-recaptcha-verification');
+      phoneRecaptchaCleanup.current?.();
+      phoneRecaptchaCleanup.current = null;
+      setPhoneConfirmation(null);
+      setConfirmedPhoneUser(null);
+      setOtpSent(false);
+      setOtp('');
+      const currentFirebaseUser = auth?.currentUser;
+      const currentFirebaseEmail = currentFirebaseUser?.email?.toLowerCase();
+      const appEmail = (user as any)?.email?.toLowerCase();
+      const linkToCurrentUser = !!currentFirebaseUser && !!appEmail && currentFirebaseEmail === appEmail;
+      if (linkToCurrentUser && currentFirebaseUser?.phoneNumber === normalizedPhone) {
+        await apiRequest('POST', '/auth/firebase/phone-verified', {
+          idToken: await currentFirebaseUser.getIdToken(true),
+          phone: normalizedPhone,
+        }) as any;
+        setOtpVerified(true);
+        toast({ title: 'Phone already verified', description: 'Your verified Firebase number has been linked to this account.' });
+        if (selfieResult) submitVerification(selfieResult.snapshotDataUrl);
+        return;
+      }
+      const challenge = createFirebasePhoneChallenge(
+        normalizedPhone,
+        'firebase-recaptcha-verification',
+        linkToCurrentUser ? 'link' : 'sign-in',
+      );
       phoneRecaptchaCleanup.current = challenge.cleanup;
       const confirmation = await challenge.confirmation;
       setPhoneConfirmation(confirmation);
       setOtpSent(true);
-      toast({ title: 'Code sent', description: `A 6-digit code was sent to ${normalizedPhone}` });
+      toast({ title: 'SMS request accepted', description: `Check ${normalizedPhone}. Delivery may take a minute.` });
     } catch (e: any) {
       phoneRecaptchaCleanup.current?.();
       phoneRecaptchaCleanup.current = null;
@@ -170,30 +196,56 @@ export default function VerificationPage() {
       return;
     }
     setOtpLoading(true);
+    let codeAccepted = !!confirmedPhoneUser;
     try {
-      if (!phoneConfirmation) throw new Error('Your SMS session expired. Please request a new code.');
-      const firebaseUser = await confirmFirebasePhoneCode(phoneConfirmation, otp);
+      let firebaseUser = confirmedPhoneUser;
+      if (!firebaseUser) {
+        if (!phoneConfirmation) throw new Error('Your SMS session expired. Please request a new code.');
+        firebaseUser = await confirmFirebasePhoneCode(phoneConfirmation, otp);
+        codeAccepted = true;
+        setConfirmedPhoneUser(firebaseUser);
+        setPhoneConfirmation(null);
+      }
       await apiRequest('POST', '/auth/firebase/phone-verified', {
-        idToken: await firebaseUser.getIdToken(),
+        idToken: await firebaseUser.getIdToken(true),
         phone,
       }) as any;
       setOtpVerified(true);
       setPhoneConfirmation(null);
+      setConfirmedPhoneUser(null);
       phoneRecaptchaCleanup.current?.();
       toast({ title: 'Phone verified ✓' });
-      if (selfieResult) submitVerification(selfieResult.snapshotDataUrl, true);
+      if (selfieResult) submitVerification(selfieResult.snapshotDataUrl);
     } catch (e: any) {
-      toast({ variant: 'destructive', title: 'That code did not work', description: toFriendlyAuthError(e, 'That code is not correct. Please check it and try again.').message });
+      toast({
+        variant: 'destructive',
+        title: codeAccepted ? 'Code accepted; phone update failed' : 'That code did not work',
+        description: toFriendlyAuthError(
+          e,
+          codeAccepted
+            ? 'Your code was accepted, but the app could not save the verified number. Press Confirm Code to retry.'
+            : 'That code is not correct. Please check it and try again.',
+        ).message,
+      });
     } finally { setOtpLoading(false); }
   };
 
+  const resendOtp = () => {
+    phoneRecaptchaCleanup.current?.();
+    phoneRecaptchaCleanup.current = null;
+    setPhoneConfirmation(null);
+    setConfirmedPhoneUser(null);
+    setOtpSent(false);
+    setOtp('');
+    void sendOtp();
+  };
+
   // ── Final submit ─────────────────────────────────────────────────────────────
-  const submitVerification = (selfieDataUrl: string, phoneVerifiedFlag: boolean) => {
+  const submitVerification = (selfieDataUrl: string) => {
     setStep('submitting');
     verifyMutation.mutate({
       selfieBase64: selfieDataUrl,
       deviceId: getDeviceId(),
-      phoneVerified: phoneVerifiedFlag,
     });
   };
 
@@ -372,7 +424,7 @@ export default function VerificationPage() {
 
               {otpSent && (
                 <div className="flex flex-col gap-3">
-                  <p className="text-sm text-gray-600 text-center">Enter the 6-digit code sent to {phone}</p>
+                  <p className="text-sm text-gray-600 text-center">Enter the 6-digit code for {phone}. If it does not arrive, tap Resend code.</p>
                   <Input
                     value={otp}
                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -393,9 +445,17 @@ export default function VerificationPage() {
                   </Button>
                   <button
                     className="text-xs text-blue-600 text-center underline"
-                    onClick={() => { setOtpSent(false); setOtp(''); setPhoneConfirmation(null); phoneRecaptchaCleanup.current?.(); }}
+                    onClick={() => { setOtpSent(false); setOtp(''); setPhoneConfirmation(null); setConfirmedPhoneUser(null); phoneRecaptchaCleanup.current?.(); phoneRecaptchaCleanup.current = null; }}
                   >
                     Use a different number
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-blue-600 text-center underline"
+                    onClick={resendOtp}
+                    disabled={otpLoading}
+                  >
+                    Resend code
                   </button>
                 </div>
               )}

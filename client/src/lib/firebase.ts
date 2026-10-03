@@ -77,19 +77,28 @@ export function normalizePhoneNumber(value: string, countryCode?: string | null)
 
 export function toFriendlyAuthError(error: unknown, fallback = 'Something went wrong. Please try again.'): Error {
   const raw = error instanceof Error ? error.message : String(error ?? '');
-  const code = raw.match(/auth\/[a-z-]+/i)?.[0]?.toLowerCase();
+  const errorCode =
+    error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+      ? error.code
+      : undefined;
+  const code = (errorCode || raw.match(/auth\/[a-z0-9-]+/i)?.[0])?.toLowerCase();
   const messages: Record<string, string> = {
     'auth/invalid-phone-number': "That phone number doesn't look right — please check the number and try again.",
     'auth/missing-phone-number': "That phone number doesn't look right — please check the number and try again.",
     'auth/invalid-verification-code': 'That code is not correct. Please check it and try again.',
+    'auth/invalid-verification-id': 'This code request expired. Request a new code and try again.',
     'auth/code-expired': 'That code has expired. Please request a new one.',
     'auth/session-expired': 'Your verification session expired. Please request a new code.',
     'auth/captcha-check-failed': 'Phone verification could not complete. Check that this site is listed in Firebase Console under Authentication → Settings → Authorized domains, then try again.',
     'auth/invalid-app-credential': 'Phone verification could not start. Check that this site is listed in Firebase Console under Authentication → Settings → Authorized domains, then try again.',
     'auth/missing-recaptcha-token': 'Phone verification could not start. Check that this site is listed in Firebase Console under Authentication → Settings → Authorized domains, then try again.',
+    'auth/unauthorized-domain': 'This website is not authorized for phone verification. Add its hostname under Firebase Authentication → Settings → Authorized domains.',
     'auth/operation-not-allowed': 'Phone sign-in is not enabled in Firebase Console. Enable Phone provider under Authentication → Sign-in method, then try again.',
     'auth/too-many-requests': 'Too many attempts. Please wait a little while and try again.',
     'auth/quota-exceeded': 'We have reached the message limit for now. Please try again later.',
+    'auth/phone-number-already-exists': 'That phone number is already linked to another Firebase account.',
+    'auth/credential-already-in-use': 'That phone number is already linked to another Firebase account.',
+    'auth/provider-already-linked': 'That phone number is already linked to this account. Refresh your session and try again.',
     'auth/email-already-in-use': 'An account with that email already exists. Try signing in instead.',
     'auth/invalid-credential': 'Those sign-in details do not look right. Please check them and try again.',
     'auth/user-not-found': 'Those sign-in details do not look right. Please check them and try again.',
@@ -142,6 +151,7 @@ export async function sendFirebasePasswordReset(email: string): Promise<void> {
 export function createFirebasePhoneChallenge(
   phone: string,
   containerId: string,
+  mode: 'sign-in' | 'link' = 'sign-in',
 ): { confirmation: Promise<ConfirmationResult>; cleanup: () => void } {
   const firebaseAuth = requireAuth();
   const container = document.getElementById(containerId);
@@ -159,7 +169,7 @@ export function createFirebasePhoneChallenge(
     phoneRecaptchaVerifiers.set(containerId, verifier);
   }
   const currentUser = firebaseAuth.currentUser;
-  const confirmation = currentUser
+  const confirmation = mode === 'link' && currentUser
     ? linkWithPhoneNumber(currentUser, phone, verifier)
     : signInWithPhoneNumber(firebaseAuth, phone, verifier);
   return {

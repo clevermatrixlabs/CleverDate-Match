@@ -21,7 +21,7 @@ import {
   normalizePhoneNumber,
   toFriendlyAuthError,
 } from '@/lib/firebase';
-import type { ConfirmationResult } from 'firebase/auth';
+import type { ConfirmationResult, User as FirebaseUser } from 'firebase/auth';
 
 /* ── Feature flags ─────────────────────────────────────────────────────────── */
 const GOOGLE_CONFIGURED = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -60,7 +60,7 @@ const phoneLoginSchema = z.object({
   phone: z.string().min(5, 'Enter your phone number'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
-const otpSchema = z.object({ otp: z.string().length(6, 'Enter the 6-digit code') });
+const otpSchema = z.object({ otp: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code') });
 const forgotPasswordSchema = z.object({ email: z.string().email('Please enter your email address') });
 
 /* ── Google multicolor G icon (official brand SVG) ───────────────────────── */
@@ -132,8 +132,10 @@ export default function OnboardingPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingPhone, setPendingPhone] = useState('');
+  const [pendingPhonePassword, setPendingPhonePassword] = useState('');
   const [pendingUser, setPendingUser] = useState<User | null>(null);
   const [phoneConfirmation, setPhoneConfirmation] = useState<ConfirmationResult | null>(null);
+  const [confirmedPhoneUser, setConfirmedPhoneUser] = useState<FirebaseUser | null>(null);
   const phoneRecaptchaCleanup = useRef<(() => void) | null>(null);
 
   const { loginWithEmail, loginWithPhone, loginWithGoogle, registerWithEmail,
@@ -211,6 +213,7 @@ export default function OnboardingPage() {
   };
 
   const handlePhoneSignup = async (data: z.infer<typeof phoneSchema>) => {
+    setPendingPhonePassword(data.password);
     await handleSendOtp(data.phone, data.country);
   };
 
@@ -226,14 +229,20 @@ export default function OnboardingPage() {
       if (!/^\+[1-9]\d{6,14}$/.test(normalizedPhone)) {
         throw new Error("That phone number doesn't look right — please check the number and try again.");
       }
-      const challenge = createFirebasePhoneChallenge(normalizedPhone, 'firebase-recaptcha');
+      phoneRecaptchaCleanup.current?.();
+      phoneRecaptchaCleanup.current = null;
+      setPhoneConfirmation(null);
+      setConfirmedPhoneUser(null);
+      setPendingPhone(normalizedPhone);
+      otpForm.reset({ otp: '' });
+      const challenge = createFirebasePhoneChallenge(normalizedPhone, 'firebase-recaptcha', 'sign-in');
       phoneRecaptchaCleanup.current = challenge.cleanup;
       const confirmation = await challenge.confirmation;
       setPhoneConfirmation(confirmation);
       setPendingPhone(normalizedPhone); setScreen('otp');
       if (country) phoneForm.setValue('country', country);
       phoneForm.setValue('phone', normalizedPhone);
-      toast({ title: 'SMS sent', description: `A verification code was sent to ${normalizedPhone}` });
+      toast({ title: 'SMS request accepted', description: `Check ${normalizedPhone}. Delivery may take a minute.` });
     } catch (e: any) {
       phoneRecaptchaCleanup.current?.();
       phoneRecaptchaCleanup.current = null;
@@ -242,19 +251,38 @@ export default function OnboardingPage() {
   };
 
   const handleVerifyOtp = async (data: z.infer<typeof otpSchema>) => {
+    let firebaseUser = confirmedPhoneUser;
     try {
-      if (!phoneConfirmation) throw new Error('Your SMS session expired. Please request a new code.');
-      const firebaseUser = await confirmFirebasePhoneCode(phoneConfirmation, data.otp);
+      if (!firebaseUser) {
+        if (!phoneConfirmation) throw new Error('Your SMS session expired. Please request a new code.');
+        firebaseUser = await confirmFirebasePhoneCode(phoneConfirmation, data.otp);
+        setConfirmedPhoneUser(firebaseUser);
+        setPhoneConfirmation(null);
+      }
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'That code did not work', description: toFriendlyAuthError(e, 'That code is not correct. Please check it and try again.').message });
+      return;
+    }
+
+    try {
       const localUser = await apiRequest('POST', '/auth/firebase/sync', {
-        idToken: await firebaseUser.getIdToken(),
+        idToken: await firebaseUser.getIdToken(true),
         country: phoneForm.getValues('country'),
         intent: 'signup',
+        password: pendingPhonePassword,
       }) as User;
       phoneRecaptchaCleanup.current?.();
       setPhoneConfirmation(null);
+      setConfirmedPhoneUser(null);
+      setPendingPhonePassword('');
       completeAuth(localUser);
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Phone confirmed, account setup incomplete',
+        description: toFriendlyAuthError(e, 'Your phone code was accepted, but account setup could not finish. Press Verify Code to retry.').message,
+      });
     }
-    catch (e: any) { toast({ variant: 'destructive', title: 'That code did not work', description: toFriendlyAuthError(e, 'That code is not correct. Please check it and try again.').message }); }
   };
 
   const handleGoogleSuccess = async (accessToken: string) => {
@@ -734,7 +762,7 @@ export default function OnboardingPage() {
           <div className="flex flex-col gap-4">
             <button onClick={back} className="flex items-center gap-1 text-blue-600 text-sm mb-2"><ArrowLeft className="w-4 h-4" /> Back</button>
             <h2 className="text-2xl font-bold text-gray-800 mb-1">Enter your verification code</h2>
-            <p className="text-gray-500 text-sm mb-4">A 6-digit code was sent to {pendingPhone}</p>
+            <p className="text-gray-500 text-sm mb-4">Enter the 6-digit code for {pendingPhone}. Delivery can take a minute; use Resend OTP if it does not arrive.</p>
             <Form {...otpForm}>
               <form onSubmit={otpForm.handleSubmit(handleVerifyOtp)} className="space-y-4">
                 <FormField control={otpForm.control} name="otp" render={({ field }) => (

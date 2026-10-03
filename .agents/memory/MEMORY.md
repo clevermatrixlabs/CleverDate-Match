@@ -2,6 +2,7 @@
 - [Wouter nest routing](wouter-nest-routing.md) — inside nest() context, use ~/path for absolute hrefs; plain /path is relative to nest base and doubles up.
 - [Flutterwave + trial system](flutterwave-trial.md) — payment flow, first-100-user trial logic, card error admin notification
 - [Query setup quirk](query-setup.md) — no global defaultQueryFn; every useQuery must define its own queryFn explicitly
-- [Identity verification design](identity-verification.md) — Section 1 done: no gov ID, selfie uses smile+headturn (not blinks), device fingerprint banning, isBanned vs isSuspended, admin queue with approve/ban/device-ban.
+- [Identity verification design](identity-verification.md) — no government ID; preserve the chosen selfie prompts, device-ban rules, and admin review states.
 - [Azure Face API verification](azure-face-verification.md) — face-api.js removed; selfie capture is client-only (canvas capture, no ML); all face comparison runs server-side via server/azureFace.ts; needs AZURE_FACE_API_KEY + AZURE_FACE_API_ENDPOINT secrets; auto-approves with warning if unconfigured.
 - [DeepFace runtime](deepface-runtime.md) — headless OpenCV 4.10 + tf-keras are required; DeepFace’s verified result is authoritative for ArcFace confirmation.
+- [Firebase phone OTP](firebase-phone-otp.md) — trust server-verified Firebase phone claims, retain successful confirmations across app-sync retries, and preserve the phone signup password contract.
