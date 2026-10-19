@@ -56,3 +56,6 @@ PAYPAL_ENVIRONMENT = "live"
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 180000
+
+[objectStorage]
+defaultBucketID = "replit-objstore-f298776a-88e6-499b-a5c1-cbd2e626b78a"
