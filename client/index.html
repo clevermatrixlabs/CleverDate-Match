@@ -3,12 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>CleverDate Match - International Dating & Matchmaking</title>
+    <meta name="description" content="An international dating platform exclusively for singles featuring AI matching, identity verification, and video profiles." />
+    <meta property="og:title" content="CleverDate Match - International Dating & Matchmaking" />
+    <meta property="og:description" content="An international dating platform exclusively for singles featuring AI matching, identity verification, and video profiles." />
     <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet" />
+    <script>
+      (function() {
+        var NativeWebSocket = window.WebSocket;
+        if (!NativeWebSocket) return;
+        function SafeWebSocket(url, protocols) {
+          if (typeof url === 'string' && (url.indexOf(':undefined') !== -1 || protocols === 'vite-hmr')) {
+            var dummy = new EventTarget();
+            dummy.binaryType = 'blob';
+            dummy.bufferedAmount = 0;
+            dummy.extensions = '';
+            dummy.protocol = '';
+            dummy.readyState = 3;
+            dummy.url = String(url);
+            dummy.close = function() {};
+            dummy.send = function() {};
+            dummy.addEventListener = EventTarget.prototype.addEventListener.bind(dummy);
+            dummy.removeEventListener = EventTarget.prototype.removeEventListener.bind(dummy);
+            dummy.dispatchEvent = EventTarget.prototype.dispatchEvent.bind(dummy);
+            return dummy;
+          }
+          return new NativeWebSocket(url, protocols);
+        }
+        SafeWebSocket.prototype = NativeWebSocket.prototype;
+        SafeWebSocket.CONNECTING = 0;
+        SafeWebSocket.OPEN = 1;
+        SafeWebSocket.CLOSING = 2;
+        SafeWebSocket.CLOSED = 3;
+        window.WebSocket = SafeWebSocket;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- This is a replit script which adds a banner on the top of the page when opened in development mode outside the replit environment -->
-    <script type="text/javascript" src="https://replit.com/public/js/replit-dev-banner.js"></script>
   </body>
 </html>

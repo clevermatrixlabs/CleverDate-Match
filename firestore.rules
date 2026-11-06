@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny all documents
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Health check / connection test collection
+    match /test/{docId} {
+      allow get: if true;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow update: if isOwner(userId) && isValidId(userId);
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+
+    // Verifications collection
+    match /verifications/{verificationId} {
+      allow get: if isSignedIn() && isValidId(verificationId) && (resource.data.userId == request.auth.uid);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(verificationId) && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(verificationId) && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Matches collection
+    match /matches/{matchId} {
+      allow get: if isSignedIn() && isValidId(matchId) && (resource.data.userId == request.auth.uid || resource.data.matchedUserId == request.auth.uid);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(matchId) && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(matchId) && (resource.data.userId == request.auth.uid || resource.data.matchedUserId == request.auth.uid);
+      allow delete: if isSignedIn() && isValidId(matchId) && (resource.data.userId == request.auth.uid || resource.data.matchedUserId == request.auth.uid);
+
+      // Subcollection: messages
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && isValidId(messageId);
+        allow create: if isSignedIn() && isValidId(messageId) && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

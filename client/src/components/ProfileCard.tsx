@@ -88,6 +88,26 @@ export default function ProfileCard({ user, onLike, onPass }: ProfileCardProps) 
           <p className="text-gray-600 text-sm leading-relaxed">{user.aboutMe}</p>
         )}
 
+        {/* Additional curated photos */}
+        {((user as any).additionalPicture1 || (user as any).additionalPicture2) && (
+          <div className="grid grid-cols-2 gap-2.5">
+            {(user as any).additionalPicture1 && (
+              <img
+                src={(user as any).additionalPicture1}
+                alt={`${user.firstName}'s photo 2`}
+                className="w-full h-40 object-cover rounded-xl"
+              />
+            )}
+            {(user as any).additionalPicture2 && (
+              <img
+                src={(user as any).additionalPicture2}
+                alt={`${user.firstName}'s photo 3`}
+                className="w-full h-40 object-cover rounded-xl"
+              />
+            )}
+          </div>
+        )}
+
         {/* Interests — shared ones highlighted */}
         {interests.length > 0 && (
           <div>

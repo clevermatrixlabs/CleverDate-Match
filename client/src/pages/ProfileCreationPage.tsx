@@ -24,6 +24,7 @@ const profileSchema = z.object({
   }),
   religion: z.string().optional(),
   aboutMe: z.string().min(10, 'Tell us a bit more about yourself').max(300, 'Bio is too long'),
+  idealMatch: z.string().max(500, 'Description is too long').optional(),
   age: z.number().min(18, 'You must be at least 18 years old').max(100, 'Age is invalid')
 });
 
@@ -66,6 +67,7 @@ export default function ProfileCreationPage() {
       intention:  (user?.intention  || draft.intention  || undefined) as any,
       religion:   (user?.religion   || draft.religion   || '') as string,
       aboutMe:    (user?.aboutMe    || draft.aboutMe    || '') as string,
+      idealMatch: ((user as any)?.idealMatch || draft.idealMatch || '') as string,
       age:        (user?.age        || draft.age        || 18) as number,
     }
   });
@@ -78,8 +80,25 @@ export default function ProfileCreationPage() {
 
   const profileMutation = useMutation({
     mutationFn: async (formData: FormData) => {
+      const headers: Record<string, string> = {};
+      try {
+        const { auth } = await import('@/lib/firebase');
+        const token = await auth?.currentUser?.getIdToken();
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+      } catch {}
+
+      try {
+        const stored = localStorage.getItem('cleverdate_user');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.id) headers['X-User-Id'] = String(parsed.id);
+          if (parsed?.email) headers['X-User-Email'] = parsed.email;
+        }
+      } catch {}
+
       const res = await fetch('/api/users/profile', {
         method: 'POST',
+        headers,
         body: formData,
         credentials: 'include',
       });
@@ -94,7 +113,12 @@ export default function ProfileCreationPage() {
         description: "Your profile has been created successfully.",
       });
       await queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
-      navigate('/verify');
+      await queryClient.invalidateQueries({ queryKey: ['/api/matches/potential'] });
+      if (user?.isVerified) {
+        navigate('/app/');
+      } else {
+        navigate('/verify');
+      }
     },
     onError: (error) => {
       toast({
@@ -364,6 +388,31 @@ export default function ProfileCreationPage() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" 
                         rows={3} 
                         placeholder="Share something about yourself"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="idealMatch"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="block text-sm font-medium text-gray-700 mb-1">
+                      How Do You Want Your Match to Be?
+                    </FormLabel>
+                    <p className="text-xs text-gray-500 mb-1.5">
+                      Describe the personality, values, background, or qualities you want our AI to look for in your 1-on-1 match.
+                    </p>
+                    <FormControl>
+                      <Textarea 
+                        {...field} 
+                        value={field.value || ''}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" 
+                        rows={3} 
+                        placeholder="e.g. Kind, family-oriented, loves travel and deep conversations..."
                       />
                     </FormControl>
                     <FormMessage />

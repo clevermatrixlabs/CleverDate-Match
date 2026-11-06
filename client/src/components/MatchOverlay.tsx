@@ -55,7 +55,7 @@ export default function MatchOverlay({ matchedUser, onClose, onSendMessage }: Ma
             className="w-full py-3 bg-transparent border border-white text-white font-medium rounded-lg"
             onClick={onClose}
           >
-            Keep Browsing
+            Back to Discover
           </button>
         </div>
       </div>

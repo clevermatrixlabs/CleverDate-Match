@@ -22,8 +22,13 @@ export function log(message: string, source = "express") {
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
-    hmr: { server },
-    allowedHosts: true,
+    port: 3000,
+    hmr: {
+      server,
+      port: 3000,
+      clientPort: 443,
+    },
+    allowedHosts: true as const,
   };
 
   const vite = await createViteServer({
@@ -33,7 +38,6 @@ export async function setupVite(app: Express, server: Server) {
       ...viteLogger,
       error: (msg, options) => {
         viteLogger.error(msg, options);
-        process.exit(1);
       },
     },
     server: serverOptions,

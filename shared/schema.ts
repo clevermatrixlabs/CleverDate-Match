@@ -14,6 +14,7 @@ export const users = pgTable("users", {
   gender: text("gender", { enum: ["male", "female"] }),
   religion: text("religion"),
   aboutMe: text("about_me"),
+  idealMatch: text("ideal_match"),
   interests: json("interests").$type<string[]>(),
   location: text("location"),
   country: text("country"),
@@ -226,9 +227,9 @@ export const phoneLoginSchema = z.object({
 export const registerSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  confirmPassword: z.string(),
+  confirmPassword: z.string().optional(),
   country: z.string().min(2, "Please select your country"),
-}).refine((data) => data.password === data.confirmPassword, {
+}).refine((data) => !data.confirmPassword || data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
 });
@@ -264,9 +265,74 @@ export const profileSchema = z.object({
   }),
   religion: z.string().optional(),
   aboutMe: z.string().min(10, "Tell us a bit more about yourself").max(300, "Bio is too long"),
+  idealMatch: z.string().trim().max(500, "Description is too long").optional().nullable(),
   age: z.number().min(18, "You must be at least 18 years old").max(100, "Age is invalid"),
   interests: z.array(z.string()).optional(),
   location: z.string().optional(),
 });
 
 export type ProfileForm = z.infer<typeof profileSchema>;
+
+export const updateProfileSchema = z.object({
+  firstName: z.string().trim().min(1, "First name cannot be empty").max(50, "First name too long").optional(),
+  lastName: z.string().trim().min(1, "Last name cannot be empty").max(50, "Last name too long").optional(),
+  gender: z.enum(["male", "female"]).optional(),
+  intention: z.enum(["marriage", "long-term", "getting-to-know"]).optional().nullable(),
+  religion: z.string().trim().max(100).optional().nullable(),
+  aboutMe: z.string().trim().max(1000).optional().nullable(),
+  idealMatch: z.string().trim().max(500).optional().nullable(),
+  age: z.number().int().min(18, "Must be at least 18").max(100, "Age is invalid").optional(),
+  interests: z.array(z.string().trim().max(50)).max(30).optional().nullable(),
+  location: z.string().trim().max(100).optional().nullable(),
+  country: z.string().trim().max(100).optional().nullable(),
+  nationalIdType: z.string().trim().max(50).optional().nullable(),
+  nationalIdNumber: z.string().trim().max(50).optional().nullable(),
+  minAgePreference: z.number().int().min(18).max(100).optional().nullable(),
+  maxAgePreference: z.number().int().min(18).max(100).optional().nullable(),
+  preferredCountries: z.array(z.string().trim().max(100)).max(50).optional().nullable(),
+  preferredReligion: z.string().trim().max(100).optional().nullable(),
+  profilePicture: z.string().trim().max(2000).optional().nullable(),
+  profileVideo: z.string().trim().max(2000).optional().nullable(),
+  additionalPicture1: z.string().trim().max(2000).optional().nullable(),
+  additionalPicture2: z.string().trim().max(2000).optional().nullable(),
+}).strict();
+
+export type UpdateProfileForm = z.infer<typeof updateProfileSchema>;
+
+export const depositSchema = z.object({
+  orderId: z.string().trim().min(1, "A verified payment reference or order ID is required"),
+  paymentProvider: z.enum(["paypal"]).default("paypal"),
+});
+export type DepositRequest = z.infer<typeof depositSchema>;
+
+export type StoreGift = {
+  id: string;
+  name: string;
+  emoji: string;
+  price: number;
+  category: "romantic" | "luxury" | "fun";
+  description: string;
+};
+
+export const STORE_GIFTS: StoreGift[] = [
+  // Romantic & Classics
+  { id: "rose", name: "Red Rose", emoji: "🌹", price: 2.99, category: "romantic", description: "A timeless classic symbol of romance and attraction." },
+  { id: "bouquet", name: "Romantic Bouquet", emoji: "💐", price: 9.99, category: "romantic", description: "Freshly arranged blossoms to brighten their day." },
+  { id: "chocolates", name: "Artisan Chocolates", emoji: "🍫", price: 14.99, category: "romantic", description: "Delicious handcrafted Belgian chocolates in a heart box." },
+  { id: "teddy_bear", name: "Cuddle Teddy Bear", emoji: "🧸", price: 19.99, category: "romantic", description: "Adorably soft companion with an embroidered heart." },
+  { id: "love_letter", name: "Wax-Sealed Love Letter", emoji: "💌", price: 4.99, category: "romantic", description: "Personalized romantic note with digital wax seal." },
+
+  // Luxury & Premium
+  { id: "champagne", name: "Sparkling Champagne", emoji: "🍾", price: 29.99, category: "luxury", description: "Pop the cork for an unforgettable virtual toast." },
+  { id: "diamond_ring", name: "Diamond Ring", emoji: "💍", price: 49.99, category: "luxury", description: "Dazzling brilliant-cut gem to show serious devotion." },
+  { id: "golden_crown", name: "Royal Gold Crown", emoji: "👑", price: 34.99, category: "luxury", description: "Treat your special match like absolute royalty." },
+  { id: "sports_car", name: "Exotic Sports Car", emoji: "🏎️", price: 79.99, category: "luxury", description: "High-octane excitement delivered straight to their heart." },
+  { id: "luxury_yacht", name: "Sunset Cruise Yacht", emoji: "🛥️", price: 99.99, category: "luxury", description: "The ultimate luxury statement on open waters." },
+
+  // Flirty & Fun
+  { id: "sweet_kiss", name: "Sweet Kiss", emoji: "💋", price: 1.99, category: "fun", description: "A tender, flirty kiss to break the ice." },
+  { id: "shooting_star", name: "Shooting Star", emoji: "⭐", price: 5.99, category: "fun", description: "Make a wish together on an enchanting shooting star." },
+  { id: "fireworks", name: "Heart Fireworks", emoji: "🎆", price: 12.99, category: "fun", description: "Light up the sky with a romantic fireworks celebration." },
+  { id: "coffee_date", name: "Warm Coffee Treat", emoji: "☕", price: 3.99, category: "fun", description: "Invite them for a cozy virtual coffee date." },
+  { id: "cocktail", name: "Evening Cocktail", emoji: "🍸", price: 7.99, category: "fun", description: "Classy martini to kick off a great conversation." },
+];

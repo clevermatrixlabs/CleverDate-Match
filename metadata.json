@@ -1,0 +1,6 @@
+{
+  "name": "CleverDate Match",
+  "description": "An international dating platform exclusively for singles featuring AI matching, identity verification, and video profiles.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

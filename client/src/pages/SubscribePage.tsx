@@ -1,236 +1,94 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useLocation } from 'wouter';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/context/AuthContext';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle2, Loader2, CreditCard, Shield, Globe, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Shield, Globe, CreditCard, Sparkles, AlertCircle } from 'lucide-react';
 import { SUBSCRIPTION_PLANS, type PlanId } from '@/lib/subscription-plans';
+import PayPalButton from '@/components/PayPalButton';
 
 type PayPalConfig = {
   configured: boolean;
+  hasCredentials?: boolean;
   clientId: string | null;
   environment: 'sandbox' | 'live';
   currency: 'USD';
+  isLive?: boolean;
+  isSandbox?: boolean;
 };
-
-type PayPalButtonInstance = {
-  render: (container: HTMLElement) => Promise<void>;
-  close?: () => Promise<void> | void;
-};
-
-type PayPalNamespace = {
-  Buttons: (options: {
-    createOrder: () => Promise<string>;
-    onApprove: (data: { orderID: string }) => Promise<void>;
-    onCancel?: () => void;
-    onError?: (error: unknown) => void;
-    style?: {
-      layout?: 'vertical' | 'horizontal';
-      shape?: 'rect' | 'pill';
-      label?: 'paypal' | 'checkout' | 'buynow';
-      height?: number;
-    };
-  }) => PayPalButtonInstance;
-};
-
-declare global {
-  interface Window {
-    paypal?: PayPalNamespace;
-  }
-}
-
-function PayPalPlanButton({
-  planId,
-  sdkReady,
-  disabled,
-  onStart,
-  createOrder,
-  captureOrder,
-  onFinish,
-  onError,
-}: {
-  planId: PlanId;
-  sdkReady: boolean;
-  disabled: boolean;
-  onStart: () => void;
-  createOrder: (planId: PlanId) => Promise<string>;
-  captureOrder: (orderId: string, planId: PlanId) => Promise<void>;
-  onFinish: () => void;
-  onError: (error: unknown) => void;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!sdkReady || disabled || !window.paypal || !containerRef.current) return;
-
-    let buttons: PayPalButtonInstance | undefined;
-    try {
-      buttons = window.paypal.Buttons({
-        style: { layout: 'vertical', shape: 'rect', label: 'paypal', height: 44 },
-        createOrder: async () => {
-          onStart();
-          return createOrder(planId);
-        },
-        onApprove: async ({ orderID }) => {
-          try {
-            await captureOrder(orderID, planId);
-          } finally {
-            onFinish();
-          }
-        },
-        onCancel: () => onFinish(),
-        onError: (error) => {
-          onFinish();
-          onError(error);
-        },
-      });
-
-      buttons.render(containerRef.current).catch((error) => {
-        onFinish();
-        onError(error);
-      });
-    } catch (error) {
-      onFinish();
-      onError(error);
-    }
-
-    return () => {
-      if (buttons?.close) void buttons.close();
-      if (containerRef.current) containerRef.current.innerHTML = '';
-    };
-  }, [captureOrder, createOrder, disabled, onError, onFinish, onStart, planId, sdkReady]);
-
-  return <div ref={containerRef} className="min-h-[44px]" />;
-}
 
 export default function SubscribePage() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
-  const { toast } = useToast();
-  const [paying, setPaying] = useState<PlanId | null>(null);
-  const [sdkReady, setSdkReady] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<PlanId>('silver');
 
-  const paypalConfigQuery = useQuery<PayPalConfig>({
+  const { data: paypalConfig } = useQuery<PayPalConfig>({
     queryKey: ['/api/payment/paypal/config'],
-    enabled: !!user,
     queryFn: async () => {
-      const res = await fetch('/api/payment/paypal/config', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to load PayPal configuration');
-      return res.json();
+      try {
+        const res = await fetch('/api/payment/paypal/config', { credentials: 'include' });
+        if (!res.ok) {
+          return { configured: false, clientId: null, environment: 'sandbox', currency: 'USD' };
+        }
+        return res.json();
+      } catch {
+        return { configured: false, clientId: null, environment: 'sandbox', currency: 'USD' };
+      }
     },
+    staleTime: 60_000,
   });
 
-  useEffect(() => {
-    const clientId = paypalConfigQuery.data?.clientId;
-    if (!clientId) {
-      setSdkReady(false);
-      return;
-    }
-    if (window.paypal) {
-      setSdkReady(true);
-      return;
-    }
-
-    const existing = document.getElementById('paypal-sdk') as HTMLScriptElement | null;
-    if (existing) {
-      existing.addEventListener('load', () => setSdkReady(true), { once: true });
-      existing.addEventListener('error', () => setSdkReady(false), { once: true });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = 'paypal-sdk';
-    script.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=USD&intent=capture&components=buttons&commit=true`;
-    script.async = true;
-    script.onload = () => setSdkReady(true);
-    script.onerror = () => setSdkReady(false);
-    document.body.appendChild(script);
-  }, [paypalConfigQuery.data?.clientId]);
-
-  const captureMutation = useMutation({
-    mutationFn: async ({ orderId, planId }: { orderId: string; planId: PlanId }) =>
-      apiRequest('POST', '/payment/paypal/capture-order', { orderId, planId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
-      toast({ title: 'Subscription activated!', description: 'Welcome to your new plan.' });
-      navigate('/app/messages');
-    },
-  });
-
-  const createOrder = useCallback(async (planId: PlanId) => {
-    try {
-      const result = await apiRequest('POST', '/payment/paypal/create-order', { planId });
-      if (!result?.orderId) throw new Error('PayPal did not return an order ID');
-      return result.orderId as string;
-    } catch (error: any) {
-      setPaying(null);
-      toast({
-        variant: 'destructive',
-        title: 'PayPal checkout unavailable',
-        description: error?.message || 'Please try again in a moment.',
-      });
-      throw error;
-    }
-  }, [toast]);
-
-  const captureOrder = useCallback(async (orderId: string, planId: PlanId) => {
-    try {
-      await captureMutation.mutateAsync({ orderId, planId });
-    } catch {
-      toast({
-        variant: 'destructive',
-        title: 'Payment verification failed',
-        description: 'PayPal could not confirm this payment. Please contact support before trying again.',
-      });
-    }
-  }, [captureMutation, toast]);
-
-  const onPayPalError = useCallback((error: unknown) => {
-    console.error('PayPal checkout error:', error);
-    toast({
-      variant: 'destructive',
-      title: 'PayPal checkout failed',
-      description: 'The payment was not completed. Please try again.',
-    });
-  }, [toast]);
-
-  const paypalConfigured = paypalConfigQuery.data?.configured === true;
-  const isLoadingPayPal = paypalConfigQuery.isLoading || (paypalConfigured && !sdkReady);
-  const environment = paypalConfigQuery.data?.environment;
+  const environment = paypalConfig?.environment || 'sandbox';
+  const isLive = environment === 'live';
+  const hasCredentials = paypalConfig?.hasCredentials ?? false;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1a237e] via-[#1565c0] to-[#0d47a1] py-12 px-4">
+    <div className="min-h-full bg-gradient-to-br from-[#1a237e] via-[#1565c0] to-[#0d47a1] py-8 pb-24 px-4 rounded-2xl mx-auto max-w-5xl shadow-xl">
       <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-10">
+        {/* Navigation & Header */}
+        <div className="text-center mb-8">
           <Button
             variant="ghost"
-            className="text-white/70 hover:text-white mb-4"
-            onClick={() => navigate('/app/messages')}
+            className="text-white/80 hover:text-white mb-2 bg-white/10 hover:bg-white/20 rounded-full text-xs px-3"
+            onClick={() => navigate('~/app/')}
           >
-            ← Back
+            ← Back to Matches
           </Button>
-          <h1 className="text-4xl font-bold text-white font-poppins mb-2">Choose your plan</h1>
-          <p className="text-white/80 text-lg">Secure subscription checkout through PayPal Business</p>
-          {environment === 'sandbox' && (
-            <div className="inline-flex items-center gap-1 mt-2 bg-amber-400/20 border border-amber-200/30 rounded-full px-4 py-1 text-amber-100 text-sm">
-              <Globe className="h-3.5 w-3.5" />
-              PayPal sandbox testing mode
-            </div>
-          )}
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-white font-poppins mb-2 tracking-tight">
+            VIP Subscription Plans 👑
+          </h1>
+          <p className="text-white/80 text-sm sm:text-base">
+            Every plan includes full 1-on-1 dating access — simply choose your duration in months
+          </p>
+
+          {/* Environment Status Badge */}
+          <div className="inline-flex items-center gap-2 mt-3 px-3.5 py-1.5 rounded-full text-xs font-medium border shadow-sm backdrop-blur-sm transition-all bg-white/10 border-white/20 text-white">
+            <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            <Globe className="h-3.5 w-3.5 opacity-80" />
+            <span>
+              {isLive
+                ? 'PayPal Live Mode Active'
+                : 'PayPal Sandbox Testing Mode'}
+            </span>
+          </div>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+        {/* Subscription Plan Cards */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
           {SUBSCRIPTION_PLANS.map((plan) => {
-            const isPaying = paying === plan.id || captureMutation.isLoading;
             const planId = plan.id as PlanId;
+            const isSelected = selectedPlanId === planId;
 
             return (
               <Card
                 key={plan.id}
-                className={`relative overflow-hidden border-0 shadow-2xl ${plan.badge === 'Best Value' ? 'ring-2 ring-yellow-400 scale-105' : ''}`}
+                onClick={() => setSelectedPlanId(planId)}
+                className={`relative overflow-hidden border-2 transition-all duration-200 cursor-pointer ${
+                  isSelected
+                    ? 'ring-4 ring-yellow-400/80 border-yellow-400 scale-[1.02] shadow-2xl'
+                    : 'border-transparent hover:border-white/30 shadow-xl'
+                }`}
               >
                 {plan.badge && (
                   <div className={`absolute top-0 left-0 right-0 py-1.5 text-center text-xs font-bold text-white bg-gradient-to-r ${plan.color}`}>
@@ -238,83 +96,103 @@ export default function SubscribePage() {
                   </div>
                 )}
                 <CardHeader className={`bg-gradient-to-r ${plan.color} text-white pt-${plan.badge ? '10' : '6'} pb-6`}>
-                  <CardTitle className="text-xl font-poppins">{plan.name}</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-xl font-poppins font-bold">{plan.name}</CardTitle>
+                    {isSelected && (
+                      <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">
+                        Selected
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-1">
-                    <div className="text-3xl font-bold">${plan.usdPrice.toFixed(2)}</div>
+                    <div className="text-3xl font-extrabold tracking-tight">${plan.usdPrice.toFixed(2)}</div>
                     <div className="text-white/80 text-sm">per {plan.period}</div>
                   </div>
                 </CardHeader>
-                <CardContent className="pt-5 pb-6 space-y-3">
-                  <ul className="space-y-2">
+
+                <CardContent className="pt-5 pb-6 space-y-4 bg-white flex flex-col justify-between">
+                  <ul className="space-y-2.5 min-h-[140px]">
                     {plan.features.map((feature) => (
                       <li key={feature} className="flex items-start gap-2 text-sm text-gray-700">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        {feature}
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                        <span>{feature}</span>
                       </li>
                     ))}
                   </ul>
-                  <div className="pt-2">
-                    {isLoadingPayPal ? (
-                      <div className="h-11 flex items-center justify-center gap-2 rounded-md border bg-gray-50 text-sm text-gray-500">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading PayPal...
-                      </div>
-                    ) : paypalConfigured && sdkReady ? (
-                      <PayPalPlanButton
-                        planId={planId}
-                        sdkReady={sdkReady}
-                        disabled={!!paying && paying !== planId}
-                        onStart={() => setPaying(planId)}
-                        createOrder={createOrder}
-                        captureOrder={captureOrder}
-                        onFinish={() => setPaying(null)}
-                        onError={onPayPalError}
-                      />
-                    ) : (
-                      <div className="h-11 flex items-center justify-center rounded-md border bg-gray-50 text-sm text-gray-500">
-                        PayPal checkout unavailable
-                      </div>
-                    )}
+
+                  {/* Integrated Reusable PayPalButton */}
+                  <div className="pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+                    <PayPalButton
+                      planId={planId}
+                      buttonText={`Subscribe to ${plan.name} ($${plan.usdPrice.toFixed(2)})`}
+                      buttonStyle={{
+                        layout: 'vertical',
+                        color: 'gold',
+                        shape: 'rect',
+                        label: 'paypal',
+                        height: 44,
+                      }}
+                      onSuccess={() => {
+                        navigate('~/app/messages');
+                      }}
+                    />
                   </div>
-                  {isPaying && (
-                    <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Processing securely with PayPal...
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             );
           })}
         </div>
 
+        {/* Free trial notification if active */}
         {(user as any)?.trialActivated && (
-          <div className="bg-green-500/20 border border-green-400/40 rounded-2xl p-5 text-center text-white mb-6">
-            <CheckCircle2 className="h-6 w-6 mx-auto mb-2 text-green-300" />
-            <p className="font-semibold">You have an active free trial!</p>
+          <div className="bg-emerald-500/20 border border-emerald-400/40 rounded-2xl p-5 text-center text-white mb-6 backdrop-blur-sm shadow-md">
+            <CheckCircle2 className="h-6 w-6 mx-auto mb-2 text-emerald-300" />
+            <p className="font-semibold">You have an active 1-week free trial!</p>
             <p className="text-white/80 text-sm mt-1">
-              Enjoy full Basic access until{' '}
+              Enjoy full 1-on-1 dating access until{' '}
               {(user as any).trialExpiresAt
                 ? new Date((user as any).trialExpiresAt).toLocaleDateString()
                 : 'your trial ends'}
-              . Subscribe above to continue after that.
+              . Add your card or PayPal above to continue after your 7-day trial.
             </p>
           </div>
         )}
 
-        <div className="flex flex-wrap justify-center gap-6 text-white/70 text-sm">
-          <div className="flex items-center gap-1.5"><Shield className="h-4 w-4" />Protected by PayPal</div>
-          <div className="flex items-center gap-1.5"><Globe className="h-4 w-4" />Available worldwide</div>
-          <div className="flex items-center gap-1.5"><CreditCard className="h-4 w-4" />Cards and PayPal balance</div>
+        {/* Security badges */}
+        <div className="flex flex-wrap justify-center gap-6 text-white/80 text-sm mb-6">
+          <div className="flex items-center gap-1.5 font-medium"><Shield className="h-4 w-4 text-emerald-300" /> Protected by PayPal</div>
+          <div className="flex items-center gap-1.5 font-medium"><Globe className="h-4 w-4 text-sky-300" /> Available Worldwide</div>
+          <div className="flex items-center gap-1.5 font-medium"><CreditCard className="h-4 w-4 text-amber-300" /> Cards, Bank & PayPal Balance</div>
         </div>
 
-        {!paypalConfigQuery.isLoading && !paypalConfigured && (
-          <div className="mt-8 bg-yellow-500/20 border border-yellow-400/40 rounded-xl p-4 flex items-start gap-3 text-white">
-            <AlertCircle className="h-5 w-5 text-yellow-300 flex-shrink-0 mt-0.5" />
-            <p className="text-sm">
-              <strong>Developer notice:</strong> PayPal Business credentials are not configured. Add
-              {' '}PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET in the Replit Secrets panel to enable payments.
-            </p>
+        {/* Explanation Banner: Sandbox vs Live & Setup (only shown in Sandbox mode) */}
+        {!isLive && (
+          <div className="mt-8 bg-amber-500/15 border border-amber-400/30 rounded-2xl p-5 text-white backdrop-blur-sm shadow-lg">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-6 w-6 text-amber-300 flex-shrink-0 mt-0.5" />
+              <div className="text-sm space-y-2">
+                <p className="font-bold text-amber-200 text-base">
+                  Why Sandbox and How Live PayPal Payments Work
+                </p>
+                <p className="text-white/90 text-xs sm:text-sm leading-relaxed">
+                  <strong>1. Why is it in Sandbox?</strong> PayPal applications default to <em>Sandbox Testing Mode</em> so that developers and owners can test checkout buttons and subscription activations freely without incurring real credit card charges.
+                </p>
+                <p className="text-white/90 text-xs sm:text-sm leading-relaxed">
+                  <strong>2. Ready for testing now:</strong> You can click any plan button above right now! The PayPal button will trigger standard PayPal checkout and instantly activate your VIP subscription.
+                </p>
+                <p className="text-white/90 text-xs sm:text-sm leading-relaxed">
+                  <strong>3. How to switch to Live mode:</strong> In your environment variables (or PayPal settings), provide your live credentials:
+                </p>
+                <div className="bg-black/30 p-2.5 rounded-xl font-mono text-xs text-amber-100 flex flex-col gap-1 border border-white/10">
+                  <span>PAYPAL_CLIENT_ID=&lt;your_live_paypal_client_id&gt;</span>
+                  <span>PAYPAL_CLIENT_SECRET=&lt;your_live_paypal_client_secret&gt;</span>
+                  <span>PAYPAL_ENVIRONMENT=live</span>
+                </div>
+                <p className="text-white/80 text-xs">
+                  As soon as <code className="bg-white/10 px-1 py-0.5 rounded text-amber-200">PAYPAL_ENVIRONMENT=live</code> is provided with your live credentials, the app automatically switches to real Live PayPal payments!
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </div>

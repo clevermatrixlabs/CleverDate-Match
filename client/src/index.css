@@ -419,3 +419,18 @@ textarea:focus {
 .font-inter {
   font-family: 'Inter', sans-serif;
 }
+
+@keyframes scan {
+  0% {
+    top: 5%;
+    opacity: 0.3;
+  }
+  50% {
+    top: 92%;
+    opacity: 1;
+  }
+  100% {
+    top: 5%;
+    opacity: 0.3;
+  }
+}

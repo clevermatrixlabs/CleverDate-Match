@@ -1,12 +1,14 @@
 import { useAuth } from '@/context/AuthContext';
 import { Link, useLocation } from 'wouter';
-import { ShieldCheck, Settings, Radio } from 'lucide-react';
+import { ShieldCheck, Settings, Radio, Crown } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 
 export default function NavigationBar() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
-  const isAdmin = !!(user as any)?.isAdmin;
+  // Strictly enforce that ONLY clevermatrix.labs@gmail.com can see and access the Owner dashboard, regardless of client-side state
+  const isSoleAdmin =
+    (user as any)?.email?.toLowerCase().trim() === 'clevermatrix.labs@gmail.com';
 
   const liveQuery = useQuery<{ id: number; title: string } | null>({
     queryKey: ['/api/live/current'],
@@ -53,14 +55,25 @@ export default function NavigationBar() {
               </Link>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {isAdmin && (
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Prominent VIP Plans Link for all users */}
+            <Link
+              href="~/app/subscribe"
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 text-slate-950 font-bold hover:brightness-110 transition-all text-xs shadow-md border border-amber-300/40"
+              title="VIP Subscription Plans"
+            >
+              <Crown className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
+              <span>VIP Plans</span>
+            </Link>
+
+            {/* Owner button: strictly visible ONLY to clevermatrix.labs@gmail.com */}
+            {isSoleAdmin && (
               <Link
                 href="~/admin"
-                className="flex items-center gap-1 rounded-full px-3 py-1.5 bg-white/10 text-white hover:bg-white/20 transition-colors text-sm font-medium border border-white/20"
+                className="flex items-center gap-1 rounded-full px-3 py-1.5 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors text-sm font-semibold border border-emerald-400/30"
                 data-testid="link-admin-dashboard"
               >
-                <ShieldCheck className="w-4 h-4" />
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 <span className="hidden sm:inline">Owner</span>
               </Link>
             )}

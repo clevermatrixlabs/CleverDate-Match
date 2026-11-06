@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile document in CleverDate Match",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "age": { "type": "number" },
+        "gender": { "type": "string" },
+        "location": { "type": "string" },
+        "country": { "type": "string" },
+        "isVerified": { "type": "boolean" },
+        "isEmailVerified": { "type": "boolean" },
+        "isPhoneVerified": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["username"]
+    },
+    "Verification": {
+      "title": "Verification",
+      "description": "Identity and face liveness verification records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "pending_review", "approved", "rejected"] },
+        "verificationMethod": { "type": "string" },
+        "faceMatchScore": { "type": "string" },
+        "livenessPassed": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "status"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "User match connection",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "matchedUserId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "matchedUserId", "status"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Direct message between matched users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "matchId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "content": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["matchId", "senderId", "recipientId", "content"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile documents"
+    },
+    "/verifications/{verificationId}": {
+      "schema": { "$ref": "#/entities/Verification" },
+      "description": "User identity and face liveness verification documents"
+    },
+    "/matches/{matchId}": {
+      "schema": { "$ref": "#/entities/Match" },
+      "description": "Matches between users"
+    },
+    "/matches/{matchId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages inside a match"
+    }
+  }
+}

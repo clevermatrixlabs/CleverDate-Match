@@ -188,7 +188,7 @@ async function checkInactiveConversations() {
       if (messages.length === 0) continue;
       const latestMessage = messages[messages.length - 1];
       const now = new Date();
-      const messageTime = new Date(latestMessage.timestamp);
+      const messageTime = new Date(latestMessage.timestamp ?? Date.now());
       const hoursSince = (now.getTime() - messageTime.getTime()) / (1000 * 60 * 60);
       if (hoursSince >= 5) {
         const messageContents = messages.map(m => m.content);

@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { queryClient } from "./lib/queryClient";
@@ -11,39 +11,49 @@ const VerificationPage = lazy(() => import("@/pages/VerificationPage"));
 import ProfileCreationPage from "@/pages/ProfileCreationPage";
 import MatchPage from "@/pages/MatchPage";
 import MessagePage from "@/pages/MessagePage";
-import WalletPage from "@/pages/WalletPage";
+import GiftStorePage from "@/pages/GiftStorePage";
 import ProfilePage from "@/pages/ProfilePage";
 import SettingsPage from "@/pages/SettingsPage";
 import AdminDashboardPage from "@/pages/AdminDashboardPage";
 const SubscribePage = lazy(() => import("@/pages/SubscribePage"));
 const LiveStudioPage = lazy(() => import("@/pages/LiveStudioPage"));
 const LiveWatchPage = lazy(() => import("@/pages/LiveWatchPage"));
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { MatchProvider } from "@/context/MatchContext";
 import { AppLoading } from "@/components/AppLoading";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+import firebaseConfig from "../../firebase-applet-config.json";
 
-const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || "";
+const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || firebaseConfig.oAuthClientId || "";
 
 function Router() {
+  const { user } = useAuth();
+  const isSoleAdmin =
+    (user as any)?.email?.toLowerCase().trim() === "clevermatrix.labs@gmail.com";
+
   return (
     <Suspense fallback={<AppLoading />}>
       <Switch>
         <Route path="/" component={OnboardingPage} />
         <Route path="/verify" component={VerificationPage} />
         <Route path="/create-profile" component={ProfileCreationPage} />
-        <Route path="/admin" component={AdminDashboardPage} />
-        <Route path="/admin/live" component={LiveStudioPage} />
-        <Route path="/app/subscribe" component={SubscribePage} />
-        <Route path="/app/live" component={LiveWatchPage} />
+        <Route path="/admin">
+          {() => (isSoleAdmin ? <AdminDashboardPage /> : <Redirect to="/app/" />)}
+        </Route>
+        <Route path="/admin/live">
+          {() => (isSoleAdmin ? <LiveStudioPage /> : <Redirect to="/app/" />)}
+        </Route>
         <Route path="/app" nest>
           <Layout>
             <Switch>
               <Route path="/" component={MatchPage} />
               <Route path="/messages" component={MessagePage} />
-              <Route path="/wallet" component={WalletPage} />
+              <Route path="/subscribe" component={SubscribePage} />
+              <Route path="/gifts" component={GiftStorePage} />
+              <Route path="/wallet" component={GiftStorePage} />
               <Route path="/profile" component={ProfilePage} />
               <Route path="/settings" component={SettingsPage} />
+              <Route path="/live" component={LiveWatchPage} />
               <Route component={MatchPage} />
             </Switch>
           </Layout>

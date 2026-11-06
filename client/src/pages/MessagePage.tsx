@@ -64,9 +64,9 @@ export default function MessagePage() {
               <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3">
                 <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-green-800 text-sm">Free trial active!</p>
+                  <p className="font-semibold text-green-800 text-sm">1-Week Free Trial Active!</p>
                   <p className="text-green-700 text-xs mt-0.5">
-                    Your 14-day trial ends{' '}
+                    Your 7-day free trial ends{' '}
                     {(user as any).trialExpiresAt
                       ? `on ${new Date((user as any).trialExpiresAt).toLocaleDateString()}`
                       : 'soon'}
@@ -89,7 +89,7 @@ export default function MessagePage() {
             {/* Subscribe CTA */}
             <Button
               className="w-full bg-gradient-to-r from-[#1a237e] to-[#1565c0] text-white text-base py-6 rounded-xl"
-              onClick={() => navigate('/app/subscribe')}
+              onClick={() => navigate('~/app/subscribe')}
             >
               <CreditCard className="h-5 w-5 mr-2" />
               View plans &amp; subscribe

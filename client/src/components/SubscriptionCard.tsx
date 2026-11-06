@@ -1,40 +1,15 @@
 import { SubscriptionPlan } from '@/types';
-import { useMutation } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
-import { queryClient } from '@/lib/queryClient';
-import { useToast } from '@/hooks/use-toast';
+import { useLocation } from 'wouter';
 
 interface SubscriptionCardProps {
   plan: SubscriptionPlan;
 }
 
 export default function SubscriptionCard({ plan }: SubscriptionCardProps) {
-  const { toast } = useToast();
-
-  const subscribeMutation = useMutation({
-    mutationFn: async (planId: string) => {
-      return apiRequest('POST', '/subscription/subscribe', { planId });
-    },
-    onSuccess: () => {
-      toast({
-        title: "Subscription successful",
-        description: `You've successfully subscribed to the ${plan.name} plan`,
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
-    },
-    onError: (error) => {
-      toast({
-        variant: "destructive",
-        title: "Subscription failed",
-        description: error instanceof Error ? error.message : "Please try again",
-      });
-    }
-  });
+  const [, setLocation] = useLocation();
 
   const handleSubscribe = () => {
-    // In a real app, this would redirect to a payment page
-    // For demo purposes, we'll simulate a successful subscription
-    subscribeMutation.mutate(plan.id);
+    setLocation('~/app/subscribe');
   };
 
   return (
@@ -78,9 +53,8 @@ export default function SubscriptionCard({ plan }: SubscriptionCardProps) {
           font-medium rounded-lg transition-colors
         `}
         onClick={handleSubscribe}
-        disabled={subscribeMutation.isLoading}
       >
-        {subscribeMutation.isLoading ? 'Processing...' : plan.ctaText}
+        {plan.ctaText}
       </button>
     </div>
   );

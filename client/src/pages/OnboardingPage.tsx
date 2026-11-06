@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,35 +7,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Mail, Phone, Eye, EyeOff, ArrowLeft, Globe, KeyRound, ShieldCheck } from 'lucide-react';
+import { Mail, Eye, EyeOff, ArrowLeft, Globe, KeyRound, ShieldCheck } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { COUNTRIES, detectCountryFromIP } from '@/lib/countries';
-import { useGoogleLogin } from '@react-oauth/google';
+import { useLocation } from 'wouter';
 import { apiRequest } from '@/lib/queryClient';
 import { User } from '@/types';
 import {
-  createFirebasePhoneChallenge,
-  confirmFirebasePhoneCode,
   isFirebaseConfigured,
   reloadFirebaseUser,
-  normalizePhoneNumber,
   toFriendlyAuthError,
 } from '@/lib/firebase';
-import type { ConfirmationResult, User as FirebaseUser } from 'firebase/auth';
+
+import firebaseConfig from '../../../firebase-applet-config.json';
 
 /* ── Feature flags ─────────────────────────────────────────────────────────── */
-const GOOGLE_CONFIGURED = !!import.meta.env.VITE_GOOGLE_CLIENT_ID;
-// Phone sign-up disabled at launch (SMS cost). Phone sign-in kept for existing users.
-const PHONE_SIGNUP_ENABLED = true;
+const GOOGLE_CONFIGURED = !!(import.meta.env.VITE_GOOGLE_CLIENT_ID || firebaseConfig.oAuthClientId);
 
 type Screen =
   | 'welcome'
   | 'choose-method'
   | 'email-login'
   | 'email-signup'
-  | 'phone-login'
-  | 'phone-signup'
-  | 'otp'
   | 'verify-email'
   | 'forgot-password';
 
@@ -50,17 +43,6 @@ const emailSignupSchema = z.object({
   confirmPassword: z.string(),
   country: z.string().min(2, 'Please select your country'),
 }).refine(d => d.password === d.confirmPassword, { message: "Passwords don't match", path: ['confirmPassword'] });
-const phoneSchema = z.object({
-  phone: z.string().regex(/^\+?[1-9]\d{6,14}$/, 'Enter phone with country code e.g. +1234567890'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  confirmPassword: z.string(),
-  country: z.string().min(2, 'Please select your country'),
-}).refine(d => d.password === d.confirmPassword, { message: "Passwords don't match", path: ['confirmPassword'] });
-const phoneLoginSchema = z.object({
-  phone: z.string().min(5, 'Enter your phone number'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-const otpSchema = z.object({ otp: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code') });
 const forgotPasswordSchema = z.object({ email: z.string().email('Please enter your email address') });
 
 /* ── Google multicolor G icon (official brand SVG) ───────────────────────── */
@@ -75,24 +57,34 @@ function GoogleIcon({ size = 20 }: { size?: number }) {
   );
 }
 
-/* ── Real Google OAuth button (only rendered when GoogleOAuthProvider is present) */
-function GoogleSignInButton({ isLogin, onSuccess, onError }: {
-  isLogin: boolean;
-  onSuccess: (accessToken: string) => void;
-  onError: () => void;
-}) {
+/* ── Firebase Native Google OAuth button ──────────────────────────────────── */
+function GoogleSignInButton({ isLogin }: { isLogin: boolean }) {
   const [loading, setLoading] = useState(false);
-  const login = useGoogleLogin({
-    onSuccess: (tokenResponse) => {
+  const { loginWithFirebaseGoogle, completeAuth } = useAuth();
+  const { toast } = useToast();
+
+  const handleGoogleClick = async () => {
+    setLoading(true);
+    try {
+      const user = await loginWithFirebaseGoogle(isLogin ? 'login' : 'signup');
+      toast({ title: 'Welcome! 🎉', description: isLogin ? 'Signed in with Google.' : 'Account created with Google!' });
+      completeAuth(user);
+    } catch (err: any) {
+      console.warn('Google sign-in error:', err?.message || err);
+      toast({
+        variant: 'destructive',
+        title: 'Google Sign-In',
+        description: toFriendlyAuthError(err, 'Google sign-in was closed or unavailable. You can use Email sign-in.').message,
+      });
+    } finally {
       setLoading(false);
-      onSuccess(tokenResponse.access_token);
-    },
-    onError: () => { setLoading(false); onError(); },
-  });
+    }
+  };
 
   return (
     <button
-      onClick={() => { setLoading(true); login(); }}
+      type="button"
+      onClick={handleGoogleClick}
       disabled={loading}
       className="w-full h-14 flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-sm disabled:opacity-60"
     >
@@ -102,7 +94,7 @@ function GoogleSignInButton({ isLogin, onSuccess, onError }: {
         <GoogleIcon size={22} />
       )}
       <span className="font-semibold text-gray-700 text-[15px]">
-        {loading ? 'Opening Google…' : isLogin ? 'Continue with Google' : 'Sign up with Google'}
+        {loading ? 'Connecting to Google…' : isLogin ? 'Continue with Google' : 'Sign up with Google'}
       </span>
     </button>
   );
@@ -131,16 +123,24 @@ export default function OnboardingPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [pendingPhone, setPendingPhone] = useState('');
-  const [pendingPhonePassword, setPendingPhonePassword] = useState('');
-  const [pendingUser, setPendingUser] = useState<User | null>(null);
-  const [phoneConfirmation, setPhoneConfirmation] = useState<ConfirmationResult | null>(null);
-  const [confirmedPhoneUser, setConfirmedPhoneUser] = useState<FirebaseUser | null>(null);
-  const phoneRecaptchaCleanup = useRef<(() => void) | null>(null);
 
-  const { loginWithEmail, loginWithPhone, loginWithGoogle, registerWithEmail,
+  const [, navigate] = useLocation();
+  const { user, loginWithEmail, loginWithGoogle, registerWithEmail,
     forgotPassword, completeAuth } = useAuth();
   const { toast } = useToast();
+
+  // If user is already authenticated, immediately route them to their profile or dashboard
+  useEffect(() => {
+    if (user) {
+      if (user.isVerified) {
+        navigate('/app/');
+      } else if (!user.gender) {
+        navigate('/create-profile');
+      } else {
+        navigate('/verify');
+      }
+    }
+  }, [user, navigate]);
 
   /* ── Forms ── */
   const emailLoginForm = useForm({ resolver: zodResolver(emailLoginSchema), defaultValues: { email: '', password: '' } });
@@ -148,15 +148,7 @@ export default function OnboardingPage() {
     resolver: zodResolver(emailSignupSchema),
     defaultValues: { email: '', password: '', confirmPassword: '', country: '' },
   });
-  const phoneForm = useForm({ resolver: zodResolver(phoneSchema), defaultValues: { phone: '', password: '', confirmPassword: '', country: '' } });
-  const phoneLoginForm = useForm({ resolver: zodResolver(phoneLoginSchema), defaultValues: { phone: '', password: '' } });
-  const otpForm = useForm({ resolver: zodResolver(otpSchema), defaultValues: { otp: '' } });
   const forgotForm = useForm({ resolver: zodResolver(forgotPasswordSchema), defaultValues: { email: '' } });
-
-  useEffect(() => () => {
-    phoneRecaptchaCleanup.current?.();
-    phoneRecaptchaCleanup.current = null;
-  }, []);
 
   /* Auto-detect country on mount */
   const [countryDetected, setCountryDetected] = useState(false);
@@ -165,7 +157,6 @@ export default function OnboardingPage() {
     detectCountryFromIP().then(code => {
       if (!code) return;
       if (!emailSignupForm.getValues('country')) emailSignupForm.setValue('country', code);
-      if (!phoneForm.getValues('country')) phoneForm.setValue('country', code);
     });
   }
 
@@ -178,10 +169,8 @@ export default function OnboardingPage() {
   const handleEmailSignup = async (data: z.infer<typeof emailSignupSchema>) => {
     try {
       const user = await registerWithEmail(data.email, data.password, data.country);
-      setPendingUser(user);
-      // Firebase sent a real verification link; wait for the user to confirm it.
-      setScreen('verify-email');
-      toast({ title: 'Account created!', description: 'Check your inbox for your Clever Date Match verification link.' });
+      toast({ title: 'Welcome! 🎉', description: 'Account created! Proceeding to your profile.' });
+      completeAuth(user);
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Registration failed', description: toFriendlyAuthError(e).message });
     }
@@ -212,79 +201,6 @@ export default function OnboardingPage() {
     }
   };
 
-  const handlePhoneSignup = async (data: z.infer<typeof phoneSchema>) => {
-    setPendingPhonePassword(data.password);
-    await handleSendOtp(data.phone, data.country);
-  };
-
-  const handlePhoneLogin = async (data: z.infer<typeof phoneLoginSchema>) => {
-    try { await loginWithPhone(data.phone, data.password); }
-    catch (e: any) { toast({ variant: 'destructive', title: 'Login failed', description: toFriendlyAuthError(e).message }); }
-  };
-
-  const handleSendOtp = async (phone: string, country?: string) => {
-    try {
-      if (!isFirebaseConfigured()) throw new Error('Phone verification is not available right now. Please try again later.');
-      const normalizedPhone = normalizePhoneNumber(phone, country);
-      if (!/^\+[1-9]\d{6,14}$/.test(normalizedPhone)) {
-        throw new Error("That phone number doesn't look right — please check the number and try again.");
-      }
-      phoneRecaptchaCleanup.current?.();
-      phoneRecaptchaCleanup.current = null;
-      setPhoneConfirmation(null);
-      setConfirmedPhoneUser(null);
-      setPendingPhone(normalizedPhone);
-      otpForm.reset({ otp: '' });
-      const challenge = createFirebasePhoneChallenge(normalizedPhone, 'firebase-recaptcha', 'sign-in');
-      phoneRecaptchaCleanup.current = challenge.cleanup;
-      const confirmation = await challenge.confirmation;
-      setPhoneConfirmation(confirmation);
-      setPendingPhone(normalizedPhone); setScreen('otp');
-      if (country) phoneForm.setValue('country', country);
-      phoneForm.setValue('phone', normalizedPhone);
-      toast({ title: 'SMS request accepted', description: `Check ${normalizedPhone}. Delivery may take a minute.` });
-    } catch (e: any) {
-      phoneRecaptchaCleanup.current?.();
-      phoneRecaptchaCleanup.current = null;
-      toast({ variant: 'destructive', title: 'Could not send your code', description: toFriendlyAuthError(e, 'Something went wrong sending your code — please try again.').message });
-    }
-  };
-
-  const handleVerifyOtp = async (data: z.infer<typeof otpSchema>) => {
-    let firebaseUser = confirmedPhoneUser;
-    try {
-      if (!firebaseUser) {
-        if (!phoneConfirmation) throw new Error('Your SMS session expired. Please request a new code.');
-        firebaseUser = await confirmFirebasePhoneCode(phoneConfirmation, data.otp);
-        setConfirmedPhoneUser(firebaseUser);
-        setPhoneConfirmation(null);
-      }
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: 'That code did not work', description: toFriendlyAuthError(e, 'That code is not correct. Please check it and try again.').message });
-      return;
-    }
-
-    try {
-      const localUser = await apiRequest('POST', '/auth/firebase/sync', {
-        idToken: await firebaseUser.getIdToken(true),
-        country: phoneForm.getValues('country'),
-        intent: 'signup',
-        password: pendingPhonePassword,
-      }) as User;
-      phoneRecaptchaCleanup.current?.();
-      setPhoneConfirmation(null);
-      setConfirmedPhoneUser(null);
-      setPendingPhonePassword('');
-      completeAuth(localUser);
-    } catch (e: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Phone confirmed, account setup incomplete',
-        description: toFriendlyAuthError(e, 'Your phone code was accepted, but account setup could not finish. Press Verify Code to retry.').message,
-      });
-    }
-  };
-
   const handleGoogleSuccess = async (accessToken: string) => {
     try { await loginWithGoogle(accessToken); }
     catch (e: any) { toast({ variant: 'destructive', title: 'Google sign-in failed', description: toFriendlyAuthError(e, 'Could not connect to Google. Try email instead.').message }); }
@@ -301,12 +217,6 @@ export default function OnboardingPage() {
   };
 
   const back = () => {
-    if (screen === 'otp') {
-      phoneRecaptchaCleanup.current?.();
-      phoneRecaptchaCleanup.current = null;
-      setPhoneConfirmation(null);
-      return setScreen('phone-login');
-    }
     if (screen === 'verify-email') return setScreen('choose-method');
     if (screen === 'forgot-password') return setScreen('email-login');
     setScreen('choose-method');
@@ -342,11 +252,11 @@ export default function OnboardingPage() {
           </div>
 
           <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" style={{ animation:'fadeUp 1s ease 0.2s both' }}>
-            <div style={{ marginBottom:8, lineHeight:1 }}>
-              <span style={{ fontFamily:"'Georgia','Times New Roman',serif", fontSize:'clamp(100px,22vw,160px)', fontWeight:900, fontStyle:'italic', background:'linear-gradient(135deg,#ffd700 0%,#ff9500 40%,#ffec6e 70%,#ffd700 100%)', backgroundSize:'200% auto', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text', animation:'glow 3s ease-in-out infinite,shimmer 4s linear infinite', display:'inline-block', filter:'drop-shadow(0 0 40px rgba(255,200,50,0.4))' }}>C</span>
+            <div style={{ marginBottom:6, lineHeight:1 }}>
+              <span style={{ fontFamily:"'Georgia','Times New Roman',serif", fontSize:'clamp(52px,13vw,92px)', fontWeight:900, fontStyle:'italic', letterSpacing:'0.04em', background:'linear-gradient(135deg,#ffd700 0%,#ff9500 40%,#ffec6e 70%,#ffd700 100%)', backgroundSize:'200% auto', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text', animation:'glow 3s ease-in-out infinite,shimmer 4s linear infinite', display:'inline-block', filter:'drop-shadow(0 0 40px rgba(255,200,50,0.4))', textTransform:'uppercase' }}>CLEVER</span>
             </div>
-            <div style={{ marginTop:-16, marginBottom:20 }}>
-              <span style={{ fontFamily:"'Georgia','Times New Roman',serif", fontSize:'clamp(28px,7vw,48px)', fontWeight:700, fontStyle:'italic', letterSpacing:'0.08em', background:'linear-gradient(90deg,#ffffff 0%,rgba(255,255,255,0.75) 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text', display:'block', textTransform:'uppercase' }}>LEVER DATE MATCH</span>
+            <div style={{ marginTop:2, marginBottom:20 }}>
+              <span style={{ fontFamily:"'Georgia','Times New Roman',serif", fontSize:'clamp(22px,5.5vw,38px)', fontWeight:700, fontStyle:'italic', letterSpacing:'0.18em', background:'linear-gradient(90deg,#ffffff 0%,rgba(255,255,255,0.75) 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text', display:'block', textTransform:'uppercase' }}>DATE MATCH</span>
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24 }}>
               <div style={{ width:60, height:1, background:'linear-gradient(90deg,transparent,rgba(255,200,70,0.5))' }} />
@@ -401,45 +311,37 @@ export default function OnboardingPage() {
             <h2 className="text-2xl font-bold text-gray-800 mb-1">{isLogin ? 'Welcome back' : 'Create account'}</h2>
             <p className="text-gray-500 text-sm mb-4">{isLogin ? 'Sign in to continue your journey' : 'Join thousands finding real love'}</p>
 
-            {/* Google Sign-In — real OAuth when configured */}
+            {/* Primary Option: Email Sign-In / Sign-Up */}
+            <button
+              type="button"
+              className="w-full h-14 flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-105 active:scale-[0.99] text-gray-950 font-bold shadow-md transition-all border border-amber-300"
+              onClick={() => setScreen(isLogin ? 'email-login' : 'email-signup')}
+            >
+              <Mail className="w-5 h-5 text-gray-950" />
+              <span className="text-[15px]">{isLogin ? 'Sign in with Email' : 'Sign up with Email'}</span>
+            </button>
+
+            <div className="flex items-center gap-3 my-1">
+              <div className="flex-1 h-px bg-gray-200" />
+              <span className="text-gray-400 text-xs font-medium">or continue with</span>
+              <div className="flex-1 h-px bg-gray-200" />
+            </div>
+
+            {/* Google Sign-In with Firebase popup / Google Picker */}
             {GOOGLE_CONFIGURED ? (
-              <GoogleSignInButton isLogin={isLogin} onSuccess={handleGoogleSuccess} onError={() => toast({ variant: 'destructive', title: 'Google sign-in failed', description: 'Could not connect to Google. Try email instead.' })} />
+              <GoogleSignInButton isLogin={isLogin} />
             ) : (
               <button
+                type="button"
                 className="w-full h-14 flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors shadow-sm"
                 onClick={() => toast({
                   variant: 'destructive',
                   title: 'Google sign-in is not available yet',
-                  description: 'Please use email or phone sign-in for now.',
+                  description: 'Please use email sign-in for now.',
                 })}
               >
                 <GoogleIcon size={22} />
-                <span className="font-semibold text-gray-500">Google sign-in unavailable</span>
-              </button>
-            )}
-
-            <div className="flex items-center gap-3 my-1">
-              <div className="flex-1 h-px bg-gray-200" />
-              <span className="text-gray-400 text-xs font-medium">or use email</span>
-              <div className="flex-1 h-px bg-gray-200" />
-            </div>
-
-            <button
-              className="w-full h-14 flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 bg-white hover:bg-gray-50 transition-colors shadow-sm"
-              onClick={() => setScreen(isLogin ? 'email-login' : 'email-signup')}
-            >
-              <Mail className="w-5 h-5 text-blue-600" />
-              <span className="font-semibold text-gray-700">{isLogin ? 'Sign in with Email' : 'Sign up with Email'}</span>
-            </button>
-
-            {/* Phone sign-in for existing users; sign-up disabled at launch */}
-            {(isLogin || PHONE_SIGNUP_ENABLED) && (
-              <button
-                className="w-full h-14 flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 bg-white hover:bg-gray-50 transition-colors shadow-sm"
-                onClick={() => setScreen(isLogin ? 'phone-login' : 'phone-signup')}
-              >
-                <Phone className="w-5 h-5 text-green-600" />
-                <span className="font-semibold text-gray-700">{isLogin ? 'Continue with Phone Number' : 'Sign up with Phone Number'}</span>
+                <span className="font-semibold text-gray-500">Google sign-in</span>
               </button>
             )}
 
@@ -589,7 +491,7 @@ export default function OnboardingPage() {
               </div>
               <h2 className="text-2xl font-bold text-gray-800 mb-2">Check your inbox</h2>
                  <p className="text-gray-500 text-sm max-w-xs">
-                 We sent a verification link to <strong>{pendingUser?.email || 'your email'}</strong>. Open it, then return here and press the button below.
+                 We sent a verification link to <strong>{user?.email || 'your email'}</strong>. Open it, then return here and press the button below.
               </p>
             </div>
             <Button type="button" onClick={handleVerifyEmail} className="w-full h-14 text-base font-semibold rounded-2xl" style={{ background:'linear-gradient(135deg,#1565c0,#1a237e)' }}>
@@ -633,162 +535,7 @@ export default function OnboardingPage() {
             </Form>
           </div>
         )}
-
-        {/* ── RESET PASSWORD ─────────────────────────────────────────── */}
-        {/* ── PHONE LOGIN ────────────────────────────────────────────── */}
-        {screen === 'phone-login' && (
-          <div className="flex flex-col gap-4">
-            <button onClick={back} className="flex items-center gap-1 text-blue-600 text-sm mb-2"><ArrowLeft className="w-4 h-4" /> Back</button>
-            <div className="flex items-center gap-2 mb-4">
-              <Phone className="w-6 h-6 text-green-600" />
-              <h2 className="text-2xl font-bold text-gray-800">Sign in with Phone</h2>
-            </div>
-            <Form {...phoneLoginForm}>
-              <form onSubmit={phoneLoginForm.handleSubmit(handlePhoneLogin)} className="space-y-4">
-                <FormField control={phoneLoginForm.control} name="phone" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Phone Number</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Phone className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                        <Input {...field} type="tel" placeholder="+1 234 567 8900" className="pl-10 h-12 rounded-xl" autoComplete="tel" />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={phoneLoginForm.control} name="password" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input {...field} type={showPassword ? 'text' : 'password'} placeholder="Enter your password" className="pr-10 h-12 rounded-xl" autoComplete="current-password" />
-                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400">
-                          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <Button type="submit" className="w-full h-14 text-base font-semibold rounded-2xl mt-2" style={{ background:'linear-gradient(135deg,#1565c0,#1a237e)' }} disabled={phoneLoginForm.formState.isSubmitting}>
-                  {phoneLoginForm.formState.isSubmitting ? 'Signing in…' : 'Sign In'}
-                </Button>
-                <p className="text-center text-sm text-gray-500">New here?{' '}<button type="button" className="text-blue-600 font-semibold" onClick={() => { setIsLogin(false); setScreen('choose-method'); }}>Create account</button></p>
-              </form>
-            </Form>
-          </div>
-        )}
-
-        {/* ── PHONE SIGNUP (disabled at launch) ─────────────────────── */}
-        {screen === 'phone-signup' && (
-          <div className="flex flex-col gap-4">
-            <button onClick={back} className="flex items-center gap-1 text-blue-600 text-sm mb-2"><ArrowLeft className="w-4 h-4" /> Back</button>
-            <div className="flex items-center gap-2 mb-4">
-              <Phone className="w-6 h-6 text-green-600" />
-              <h2 className="text-2xl font-bold text-gray-800">Sign up with Phone</h2>
-            </div>
-            <Form {...phoneForm}>
-              <form onSubmit={phoneForm.handleSubmit(handlePhoneSignup)} className="space-y-4">
-                <FormField control={phoneForm.control} name="phone" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Phone Number</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Phone className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                        <Input {...field} type="tel" placeholder="+1 234 567 8900" className="pl-10 h-12 rounded-xl" autoComplete="tel" />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={phoneForm.control} name="password" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Create Password</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input {...field} type={showPassword ? 'text' : 'password'} placeholder="Min. 8 characters" className="pr-10 h-12 rounded-xl" autoComplete="new-password" />
-                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400">
-                          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={phoneForm.control} name="confirmPassword" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input {...field} type={showConfirm ? 'text' : 'password'} placeholder="Repeat your password" className="pr-10 h-12 rounded-xl" autoComplete="new-password" />
-                        <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-3 text-gray-400">
-                          {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={phoneForm.control} name="country" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Country</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="h-12 rounded-xl">
-                          <div className="flex items-center gap-2">
-                            <Globe className="w-4 h-4 text-gray-400" />
-                            <SelectValue placeholder="Select your country" />
-                          </div>
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="max-h-72">
-                        {COUNTRIES.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <Button type="submit" className="w-full h-14 text-base font-semibold rounded-2xl" style={{ background:'linear-gradient(135deg,#1565c0,#1a237e)' }} disabled={phoneForm.formState.isSubmitting}>
-                  {phoneForm.formState.isSubmitting ? 'Creating account…' : 'Create Account'}
-                </Button>
-              </form>
-            </Form>
-          </div>
-        )}
-
-        {/* ── OTP VERIFICATION ───────────────────────────────────────── */}
-        {screen === 'otp' && (
-          <div className="flex flex-col gap-4">
-            <button onClick={back} className="flex items-center gap-1 text-blue-600 text-sm mb-2"><ArrowLeft className="w-4 h-4" /> Back</button>
-            <h2 className="text-2xl font-bold text-gray-800 mb-1">Enter your verification code</h2>
-            <p className="text-gray-500 text-sm mb-4">Enter the 6-digit code for {pendingPhone}. Delivery can take a minute; use Resend OTP if it does not arrive.</p>
-            <Form {...otpForm}>
-              <form onSubmit={otpForm.handleSubmit(handleVerifyOtp)} className="space-y-4">
-                <FormField control={otpForm.control} name="otp" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>One-Time Password</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="text" inputMode="numeric" maxLength={6} placeholder="000000" className="h-14 rounded-xl text-center text-2xl tracking-[0.4em] font-semibold" autoComplete="one-time-code" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <Button type="submit" className="w-full h-14 text-base font-semibold rounded-2xl" style={{ background:'linear-gradient(135deg,#1565c0,#1a237e)' }} disabled={otpForm.formState.isSubmitting}>
-                  {otpForm.formState.isSubmitting ? 'Verifying…' : 'Verify Code'}
-                </Button>
-                <p className="text-center text-sm text-gray-500">
-                  Didn't receive it?{' '}
-                  <button type="button" className="text-blue-600 font-semibold" onClick={() => handleSendOtp(pendingPhone)}>Resend OTP</button>
-                </p>
-              </form>
-            </Form>
-          </div>
-        )}
-
       </div>
-      {/* Keep this attached to the DOM: Firebase uses it for the invisible reCAPTCHA challenge. */}
-      <div id="firebase-recaptcha" className="fixed left-0 top-0 h-px w-px overflow-hidden" aria-hidden="true" />
     </div>
   );
 }

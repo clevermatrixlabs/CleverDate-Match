@@ -11,12 +11,14 @@ import {
 } from "@shared/schema";
 import * as schema from "@shared/schema";
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // Module-level db reference — set by initStorage() after connection test
 let db: any = null;
 
 // Add retry functionality for database operations
-async function withRetry<T>(operation: () => Promise<T>, maxRetries = 5, delay = 1000): Promise<T> {
+async function withRetry<T = any>(operation: () => Promise<T>, maxRetries = 5, delay = 1000): Promise<any> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -35,8 +37,11 @@ async function withRetry<T>(operation: () => Promise<T>, maxRetries = 5, delay =
   throw lastError;
 }
 
-function dateOrder(value: Date | null | undefined): number {
-  return value?.getTime() ?? 0;
+function dateOrder(value: Date | string | number | null | undefined): number {
+  if (!value) return 0;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime();
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 import { eq, and, not, desc, or, sql, notInArray } from "drizzle-orm";
 
@@ -110,6 +115,10 @@ export interface IStorage {
   // Admin verification review
   listVerificationsForReview(): Promise<any[]>;
   getAllVerifications(): Promise<any[]>;
+
+  // Recorded email tracking (prevents duplicate signups)
+  isEmailRecorded(email: string): Promise<boolean>;
+  recordEmail(email: string): Promise<void>;
 }
 
 // In-memory storage for testing and fallback
@@ -132,23 +141,92 @@ export class MemStorage implements IStorage {
   private currentTransactionId = 1;
   private currentSocialId = 1;
 
+  private recordedEmails: Set<string> = new Set();
+
+  private static readonly STORAGE_FILE = path.resolve(process.cwd(), ".data", "memstorage.json");
+
+  private saveToDisk() {
+    try {
+      const dir = path.dirname(MemStorage.STORAGE_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const payload = {
+        users: Array.from(this.users.entries()),
+        verifications: Array.from(this.verifications.entries()),
+        matches: Array.from(this.matches.entries()),
+        messages: Array.from(this.messages.entries()),
+        subscriptions: Array.from(this.subscriptions.entries()),
+        transactions: Array.from(this.transactions.entries()),
+        socials: Array.from(this.socials.entries()),
+        recordedEmails: Array.from(this.recordedEmails),
+        counters: {
+          currentUserId: this.currentUserId,
+          currentVerificationId: this.currentVerificationId,
+          currentMatchId: this.currentMatchId,
+          currentMessageId: this.currentMessageId,
+          currentSubscriptionId: this.currentSubscriptionId,
+          currentTransactionId: this.currentTransactionId,
+          currentSocialId: this.currentSocialId,
+        },
+      };
+      fs.writeFileSync(MemStorage.STORAGE_FILE, JSON.stringify(payload), "utf8");
+    } catch (err) {
+      console.warn("[storage] Failed to persist MemStorage:", err);
+    }
+  }
+
+  private loadFromDisk(): boolean {
+    try {
+      if (!fs.existsSync(MemStorage.STORAGE_FILE)) return false;
+      const raw = fs.readFileSync(MemStorage.STORAGE_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.users)) this.users = new Map(parsed.users);
+      if (Array.isArray(parsed.verifications)) this.verifications = new Map(parsed.verifications);
+      if (Array.isArray(parsed.matches)) this.matches = new Map(parsed.matches);
+      if (Array.isArray(parsed.messages)) this.messages = new Map(parsed.messages);
+      if (Array.isArray(parsed.subscriptions)) this.subscriptions = new Map(parsed.subscriptions);
+      if (Array.isArray(parsed.transactions)) this.transactions = new Map(parsed.transactions);
+      if (Array.isArray(parsed.socials)) this.socials = new Map(parsed.socials);
+      if (Array.isArray(parsed.recordedEmails)) {
+        this.recordedEmails = new Set(parsed.recordedEmails.map((e: string) => e.toLowerCase().trim()));
+      }
+      for (const u of this.users.values()) {
+        if (u.email) this.recordedEmails.add(u.email.toLowerCase().trim());
+      }
+      if (parsed.counters) {
+        this.currentUserId = parsed.counters.currentUserId || 1;
+        this.currentVerificationId = parsed.counters.currentVerificationId || 1;
+        this.currentMatchId = parsed.counters.currentMatchId || 1;
+        this.currentMessageId = parsed.counters.currentMessageId || 1;
+        this.currentSubscriptionId = parsed.counters.currentSubscriptionId || 1;
+        this.currentTransactionId = parsed.counters.currentTransactionId || 1;
+        this.currentSocialId = parsed.counters.currentSocialId || 1;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   constructor() {
-    // Initialize with some sample socials for the app owner
-    this.createSocial({
-      platform: "instagram",
-      url: "https://instagram.com/cleverdatematch",
-      isActive: true
-    });
-    this.createSocial({
-      platform: "twitter",
-      url: "https://twitter.com/cleverdatematch",
-      isActive: true
-    });
-    this.createSocial({
-      platform: "youtube",
-      url: "https://youtube.com/c/cleverdatematch",
-      isActive: true
-    });
+    const loaded = this.loadFromDisk();
+    if (!loaded) {
+      // Initialize with some sample socials for the app owner
+      this.createSocial({
+        platform: "instagram",
+        url: "https://instagram.com/cleverdatematch",
+        isActive: true
+      });
+      this.createSocial({
+        platform: "twitter",
+        url: "https://twitter.com/cleverdatematch",
+        isActive: true
+      });
+      this.createSocial({
+        platform: "youtube",
+        url: "https://youtube.com/c/cleverdatematch",
+        isActive: true
+      });
+    }
   }
 
   // User methods
@@ -171,14 +249,28 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentUserId++;
     const now = new Date();
-    const user: User = { 
+    const user = { 
       ...insertUser, 
       id,
       createdAt: now,
       updatedAt: now
-    };
+    } as User;
     this.users.set(id, user);
+    if (user.email) {
+      this.recordedEmails.add(user.email.toLowerCase().trim());
+    }
+    this.saveToDisk();
     return user;
+  }
+
+  async isEmailRecorded(email: string): Promise<boolean> {
+    const norm = email.toLowerCase().trim();
+    return this.recordedEmails.has(norm) || !!(await this.getUserByEmail(norm));
+  }
+
+  async recordEmail(email: string): Promise<void> {
+    this.recordedEmails.add(email.toLowerCase().trim());
+    this.saveToDisk();
   }
 
   async deleteUser(id: number): Promise<void> {
@@ -203,6 +295,7 @@ export class MemStorage implements IStorage {
       updatedAt: new Date()
     };
     this.users.set(id, updatedUser);
+    this.saveToDisk();
     return updatedUser;
   }
 
@@ -227,11 +320,11 @@ export class MemStorage implements IStorage {
   async createVerification(verification: InsertVerification): Promise<Verification> {
     const id = this.currentVerificationId++;
     const now = new Date();
-    const newVerification: Verification = {
+    const newVerification = {
       ...verification,
       id,
       createdAt: now
-    };
+    } as Verification;
     this.verifications.set(id, newVerification);
     return newVerification;
   }
@@ -250,12 +343,12 @@ export class MemStorage implements IStorage {
   async createMatch(match: InsertMatch): Promise<Match> {
     const id = this.currentMatchId++;
     const now = new Date();
-    const newMatch: Match = {
+    const newMatch = {
       ...match,
       id,
       createdAt: now,
       updatedAt: now
-    };
+    } as Match;
     this.matches.set(id, newMatch);
     return newMatch;
   }
@@ -299,9 +392,9 @@ export class MemStorage implements IStorage {
 
   async getPotentialMatches(userId: number, gender: "male" | "female" | null): Promise<User[]> {
     const user = await this.getUser(userId);
-    if (!user || !user.gender) return [];
+    if (!user) return [];
 
-    const oppositeGender = user.gender === "male" ? "female" : "male";
+    const oppositeGender = user.gender === "male" ? "female" : user.gender === "female" ? "male" : null;
 
     // Get IDs of users already interacted with
     const interactedUserIds = new Set<number>();
@@ -316,7 +409,7 @@ export class MemStorage implements IStorage {
     // Find potential matches — exclude admins, suspended, unverified, and already-seen users
     return Array.from(this.users.values()).filter(u => 
       u.id !== userId &&
-      u.gender === oppositeGender &&
+      (!oppositeGender || u.gender === oppositeGender) &&
       u.isVerified === true &&
       !(u as any).isAdmin &&
       !(u as any).isSuspended &&
@@ -333,11 +426,11 @@ export class MemStorage implements IStorage {
   async createMessage(message: InsertMessage): Promise<Message> {
     const id = this.currentMessageId++;
     const now = new Date();
-    const newMessage: Message = {
+    const newMessage = {
       ...message,
       id,
       timestamp: now
-    };
+    } as Message;
     this.messages.set(id, newMessage);
     return newMessage;
   }
@@ -352,11 +445,11 @@ export class MemStorage implements IStorage {
   async createSubscription(subscription: InsertSubscription): Promise<Subscription> {
     const id = this.currentSubscriptionId++;
     const now = new Date();
-    const newSubscription: Subscription = {
+    const newSubscription = {
       ...subscription,
       id,
       createdAt: now
-    };
+    } as Subscription;
     this.subscriptions.set(id, newSubscription);
     return newSubscription;
   }
@@ -376,6 +469,11 @@ export class MemStorage implements IStorage {
     const id = this.currentTransactionId++;
     const now = new Date();
     const newTransaction: Transaction = {
+      status: "completed",
+      paymentProvider: null,
+      paymentReference: null,
+      planId: null,
+      recipientId: null,
       ...transaction,
       id,
       createdAt: now
@@ -401,6 +499,7 @@ export class MemStorage implements IStorage {
     const id = this.currentSocialId++;
     const now = new Date();
     const newSocial: Social = {
+      isActive: true,
       ...social,
       id,
       createdAt: now
@@ -538,6 +637,14 @@ export class DrizzleStorage implements IStorage {
     return results[0];
   }
 
+  async isEmailRecorded(email: string): Promise<boolean> {
+    return !!(await this.getUserByEmail(email));
+  }
+
+  async recordEmail(_email: string): Promise<void> {
+    // Persisted in users table
+  }
+
   async getUserByPhone(phone: string): Promise<User | undefined> {
     if (!db) return undefined;
     const results = await withRetry(() => db.select().from(schema.users).where(eq(schema.users.phone, phone)).limit(1));
@@ -560,7 +667,7 @@ export class DrizzleStorage implements IStorage {
     // Cascade delete all user data in the correct dependency order
     await withRetry(() => db.delete(schema.messages).where(eq(schema.messages.senderId, id)));
     await withRetry(() => db.delete(schema.matches).where(
-      or(eq(schema.matches.userId1, id), eq(schema.matches.userId2, id))
+      or(eq(schema.matches.userId, id), eq(schema.matches.matchedUserId, id))
     ));
     await withRetry(() => db.delete(schema.verifications).where(eq(schema.verifications.userId, id)));
     await withRetry(() => db.delete(schema.subscriptions).where(eq(schema.subscriptions.userId, id)));
@@ -750,7 +857,7 @@ export class DrizzleStorage implements IStorage {
         )
       ));
 
-    const interactedUserIds = interactions.map(match => 
+    const interactedUserIds = (interactions as any[]).map((match: any) => 
       match.userId === userId ? match.matchedUserId : match.userId
     );
 
@@ -815,7 +922,7 @@ export class DrizzleStorage implements IStorage {
 
   async getSubscription(id: number): Promise<Subscription | undefined> {
     if (!db) return undefined;
-    const results = await withRetry(() => db.select().from(schema.subscriptions).where(eq(schema.subscriptions.id, id.toString())).limit(1));
+    const results = await withRetry(() => db.select().from(schema.subscriptions).where(eq(schema.subscriptions.id, id)).limit(1));
     return results[0];
   }
 
@@ -1006,12 +1113,12 @@ export let storage: IStorage = new MemStorage();
 
 export async function initStorage(): Promise<void> {
   try {
-    const { dbReady } = await import('./supabase');
+    const { dbReady } = await import('./db');
     await dbReady;
     // Re-import to get the updated db value after the promise resolves
-    const supabase = await import('./supabase');
-    if (supabase.db) {
-      db = supabase.db; // set module-level db for DrizzleStorage methods
+    const dbModule = await import('./db');
+    if (dbModule.db) {
+      db = dbModule.db; // set module-level db for DrizzleStorage methods
       console.log("Using PostgreSQL database for storage");
       storage = new DrizzleStorage();
 

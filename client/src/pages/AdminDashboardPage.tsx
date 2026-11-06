@@ -145,63 +145,48 @@ export default function AdminDashboardPage() {
   const [newPlatform, setNewPlatform] = useState('instagram');
   const [newUrl, setNewUrl] = useState('');
 
-  // Guard: only admins
-  useEffect(() => {
-    if (!authLoading && (!user || !(user as any).isAdmin)) {
-      navigate('/');
-    }
-  }, [authLoading, user, navigate]);
+  // Guard: only the sole authorized owner (clevermatrix.labs@gmail.com)
+  const isSoleAdmin =
+    !authLoading &&
+    !!user &&
+    (user as any).email?.toLowerCase().trim() === 'clevermatrix.labs@gmail.com';
 
-  const isAdmin = !!user && (user as any).isAdmin;
+  useEffect(() => {
+    if (!authLoading && !isSoleAdmin) {
+      navigate('/app/');
+    }
+  }, [authLoading, isSoleAdmin, navigate]);
+
+  const isAdmin = isSoleAdmin;
 
   const statsQuery = useQuery<AdminStats>({
     queryKey: ['/api/admin/stats'],
     enabled: isAdmin,
-    queryFn: async () => {
-      const res = await fetch('/api/admin/stats', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to fetch stats');
-      return res.json();
-    },
+    queryFn: () => apiRequest('GET', '/api/admin/stats'),
   });
 
   const usersQuery = useQuery<AdminUser[]>({
     queryKey: ['/api/admin/users'],
     enabled: isAdmin,
-    queryFn: async () => {
-      const res = await fetch('/api/admin/users', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to fetch users');
-      return res.json();
-    },
+    queryFn: () => apiRequest('GET', '/api/admin/users'),
   });
 
   const paypalQuery = useQuery<PayPalStatus>({
     queryKey: ['/api/admin/paypal-status'],
     enabled: isAdmin,
-    queryFn: async () => {
-      const res = await fetch('/api/admin/paypal-status', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed');
-      return res.json();
-    },
+    queryFn: () => apiRequest('GET', '/api/admin/paypal-status'),
   });
 
   const socialsQuery = useQuery<SocialLink[]>({
     queryKey: ['/api/admin/socials'],
     enabled: isAdmin,
-    queryFn: async () => {
-      const res = await fetch('/api/admin/socials', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed');
-      return res.json();
-    },
+    queryFn: () => apiRequest('GET', '/api/admin/socials'),
   });
 
   const verificationsQuery = useQuery<VerificationRecord[]>({
     queryKey: ['/api/admin/verifications'],
     enabled: isAdmin,
-    queryFn: async () => {
-      const res = await fetch('/api/admin/verifications', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed');
-      return res.json();
-    },
+    queryFn: () => apiRequest('GET', '/api/admin/verifications'),
   });
 
   // ── Mutations ─────────────────────────────────────────────────────────────
@@ -306,7 +291,7 @@ export default function AdminDashboardPage() {
     addSocialMutation.mutate({ platform: newPlatform, url: newUrl.trim() });
   };
 
-  if (authLoading || !user || !(user as any).isAdmin) {
+  if (authLoading || !isSoleAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center">

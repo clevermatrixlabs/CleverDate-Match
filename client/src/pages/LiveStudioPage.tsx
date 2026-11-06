@@ -46,10 +46,11 @@ export default function LiveStudioPage() {
   const msgIdRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Redirect non-admins
+  // Redirect non-admins (strictly only clevermatrix.labs@gmail.com is authorized)
+  const isSoleAdmin = (user as any)?.email?.toLowerCase().trim() === 'clevermatrix.labs@gmail.com';
   useEffect(() => {
-    if (user && !(user as any).isAdmin) navigate('/app/');
-  }, [user]);
+    if (user && !isSoleAdmin) navigate('/app/');
+  }, [user, isSoleAdmin]);
 
   // Elapsed timer
   useEffect(() => {
@@ -175,7 +176,7 @@ export default function LiveStudioPage() {
   const userName = user ? `${(user as any).firstName ?? ''} ${(user as any).lastName ?? ''}`.trim() || 'Tim' : 'Tim';
   const profilePic = (user as any)?.profilePicture;
 
-  if (!user || !(user as any).isAdmin) {
+  if (!user || !isSoleAdmin) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <p className="text-white">Access denied.</p>
